@@ -1,18 +1,25 @@
+// frontend/src/pages/index.jsx
+
 /**
  * Home Page
  * Main landing page with featured items and search
  */
 
 import React, { useState, useEffect } from 'react';
-import Navbar from '../components/Navbar';
 import ItemCard from '../components/ItemCard';
 import axios from 'axios';
 import Link from 'next/link';
+import useAuth from '../../hooks/useAuth'; 
+import { useRouter } from 'next/router'; 
 
 export default function Home() {
   const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loadingItems, setLoadingItems] = useState(true);
   const [error, setError] = useState(null);
+  
+  const { isAuthenticated, loading: loadingAuth } = useAuth();
+  const router = useRouter();
+
 
   useEffect(() => {
     fetchItems();
@@ -20,7 +27,7 @@ export default function Home() {
 
   const fetchItems = async () => {
     try {
-      setLoading(true);
+      setLoadingItems(true);
       const response = await axios.get(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/found`,
         {
@@ -36,14 +43,24 @@ export default function Home() {
       console.error('Failed to fetch items:', err);
       setError('Failed to load items');
     } finally {
-      setLoading(false);
+      setLoadingItems(false);
     }
+  };
+    const handleReportRedirect = (type) => {
+      if (loadingAuth) return; 
+
+      if (isAuthenticated) {
+          const path = type === 'found' ? '/report-found' : '/report-lost';
+          router.push(path);
+      } else {
+          router.push('/login');
+      }
   };
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <Navbar />
-
+      {}
+      
       {/* Hero Section */}
       <div className="bg-gradient-to-r from-primary to-secondary text-white py-16">
         <div className="container-custom text-center">
@@ -52,15 +69,16 @@ export default function Home() {
           <p className="text-lg mb-8">
             Report found items or search for your lost belongings
           </p>
-          <Link href="/signup">
+          {}
+          <Link href={isAuthenticated ? '/search' : '/signup'}>
             <button className="bg-white text-primary px-8 py-3 rounded-lg font-bold hover:bg-opacity-90 transition-all">
-              Get Started
+              {isAuthenticated ? 'Search Items' : 'Get Started'}
             </button>
           </Link>
         </div>
       </div>
 
-      {/* Statistics Section */}
+      {/* Statistics Section (No Change) */}
       <div className="bg-white py-12 border-b">
         <div className="container-custom">
           <div className="grid grid-cols-3 gap-8 text-center">
@@ -86,7 +104,7 @@ export default function Home() {
       <div className="container-custom py-16">
         <h2 className="text-3xl font-bold mb-8">Recently Found Items</h2>
 
-        {loading ? (
+        {loadingItems ? (
           <div className="flex justify-center items-center py-12">
             <div className="spinner w-8 h-8 border-4 border-primary border-t-secondary"></div>
           </div>
@@ -97,11 +115,13 @@ export default function Home() {
         ) : items.length === 0 ? (
           <div className="bg-gray-100 p-8 rounded-lg text-center">
             <p className="text-gray-600 mb-4">No items found yet</p>
-            <Link href="/login">
-              <button className="btn-primary">
-                Sign in to report an item
-              </button>
-            </Link>
+            {}
+            <button 
+                className="btn-primary"
+                onClick={() => handleReportRedirect('found')}
+            >
+              Sign in to report an item
+            </button>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -119,11 +139,13 @@ export default function Home() {
           <p className="text-lg mb-8">
             Report your lost item and our community will help you find it
           </p>
-          <Link href="/login">
-            <button className="bg-secondary hover:bg-opacity-90 text-white px-8 py-3 rounded-lg font-bold transition-all">
-              Report Lost Item
-            </button>
-          </Link>
+          {}
+          <button 
+              className="bg-secondary hover:bg-opacity-90 text-white px-8 py-3 rounded-lg font-bold transition-all"
+              onClick={() => handleReportRedirect('lost')}
+          >
+            Report Lost Item
+          </button>
         </div>
       </div>
 
