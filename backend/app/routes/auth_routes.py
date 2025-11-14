@@ -2,7 +2,7 @@
 Authentication routes for user signup and login
 Handles Firebase authentication integration
 """
-
+from pydantic import BaseModel
 from fastapi import APIRouter, HTTPException, status, Depends
 from sqlalchemy.orm import Session
 from app.db import get_db
@@ -26,10 +26,11 @@ router = APIRouter()
 initialize_firebase()
 
 
-class LoginRequest:
-    """Model for login request"""
+# 💡 FIX: Inherit from BaseModel to define the expected JSON body structure
+class LoginRequest(BaseModel): 
+    """Pydantic Model for login request body"""
     email: str
-    password: str
+    token: str
 
 
 @router.post("/signup", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
@@ -82,8 +83,7 @@ def signup(
 
 @router.post("/login")
 def login(
-    email: str,
-    token: str,
+    request: LoginRequest, # 💡 FIX: Accept the LoginRequest Pydantic model
     db: Session = Depends(get_db)
 ):
     """
@@ -94,8 +94,7 @@ def login(
     - Frontend handles Firebase Authentication, backend validates token
     
     Args:
-        email: User's email
-        token: Firebase ID token from frontend
+        request: JSON body containing email and Firebase ID token
         db: Database session
         
     Returns:
@@ -104,6 +103,9 @@ def login(
     Raises:
         HTTPException: If token is invalid or user not found
     """
+    # 💡 Access email and token from the request object
+    email = request.email
+    token = request.token
     
     # Validate email domain
     if not validate_iba_email(email):
