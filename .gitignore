@@ -69,3 +69,7 @@ yarn-error.log
 # Logs
 logs/
 *.log
+
+# Python virtual environments
+venv/
+backend/venv/
