@@ -51,7 +51,7 @@ export default function Login() {
       // Get Firebase token
       const token = await userCredential.user.getIdToken();
 
-      // Step 2: Validate token with backend
+      // Step 2: Send to backend
       const response = await axios.post(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/auth/login`,
         {
@@ -61,7 +61,7 @@ export default function Login() {
       );
 
       if (response.data.status === 'success') {
-        // Store token in localStorage for future requests
+        // Store token and user data
         localStorage.setItem('authToken', token);
         localStorage.setItem('user', JSON.stringify(response.data.user));
 
@@ -73,17 +73,29 @@ export default function Login() {
         }
       }
     } catch (err) {
-      console.error('Login failed:', err);
+        console.error('Login failed:', err);
 
-      if (err.code === 'auth/user-not-found') {
-        setError('No account found with this email');
-      } else if (err.code === 'auth/wrong-password') {
-        setError('Incorrect password');
-      } else if (err.response?.data?.detail) {
-        setError(err.response.data.detail);
-      } else {
-        setError(err.message || 'Failed to login');
-      }
+        // Normalize various error shapes into a string for rendering
+        let message = 'Failed to login. Please try again.';
+
+        if (err.code === 'auth/user-not-found') {
+          message = 'No account found with this email. Please sign up first.';
+        } else if (err.code === 'auth/wrong-password') {
+          message = 'Incorrect password';
+        } else if (err.code === 'auth/invalid-email') {
+          message = 'Invalid email address';
+        } else if (err.response?.data) {
+          const resp = err.response.data;
+          console.error('Backend response:', resp);
+          if (typeof resp === 'string') message = resp;
+          else if (typeof resp.detail === 'string') message = resp.detail;
+          else if (resp.message) message = resp.message;
+          else message = JSON.stringify(resp);
+        } else if (err.message) {
+          message = err.message;
+        }
+
+        setError(String(message));
     } finally {
       setLoading(false);
     }
@@ -143,16 +155,6 @@ export default function Login() {
                 <Link href="/signup">
                   <span className="text-primary font-bold cursor-pointer hover:underline">
                     Sign up here
-                  </span>
-                </Link>
-              </p>
-            </div>
-
-            <div className="mt-4 pt-4 border-t text-center text-gray-600">
-              <p className="text-sm">
-                <Link href="/admin/login">
-                  <span className="text-primary cursor-pointer hover:underline">
-                    Admin login
                   </span>
                 </Link>
               </p>

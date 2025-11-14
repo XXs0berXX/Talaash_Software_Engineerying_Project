@@ -83,7 +83,7 @@ export default function Signup() {
         formData.password
       );
 
-      // Update display name
+      // Update display name in Firebase
       await updateProfile(userCredential.user, {
         displayName: formData.name,
       });
@@ -100,20 +100,49 @@ export default function Signup() {
         }
       );
 
-      if (response.status === 201) {
-        // Success - redirect to login or home
-        router.push('/login');
-      }
-    } catch (err) {
-      console.error('Signup failed:', err);
+      // Success - redirect to login
+      router.push('/login');
       
-      if (err.code === 'auth/email-already-in-use') {
-        setError('Email already in use');
-      } else if (err.response?.data?.detail) {
-        setError(err.response.data.detail);
-      } else {
-        setError(err.message || 'Failed to create account');
-      }
+    } catch (err) {
+        console.error('Signup failed:', err);
+
+        // If the Firebase account already exists, ensure the backend has a user record
+        if (err.code === 'auth/email-already-in-use') {
+          try {
+            // Try creating the backend user record using the provided name/email
+            const backendResp = await axios.post(
+              `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/auth/signup`,
+              {
+                name: formData.name,
+                email: formData.email,
+              }
+            );
+
+            console.log('Backend signup result for existing Firebase user:', backendResp.data);
+            // Either created or returned existing user — forward to login
+            router.push('/login');
+            return;
+          } catch (backendErr) {
+            console.error('Backend signup failed for existing Firebase user:', backendErr);
+            const resp = backendErr.response?.data;
+            let message = 'Email already in use. Please login instead.';
+            if (resp) {
+              if (typeof resp === 'string') message = resp;
+              else if (typeof resp.detail === 'string') message = resp.detail;
+              else message = JSON.stringify(resp);
+            }
+            setError(String(message));
+          }
+
+        } else if (err.code === 'auth/weak-password') {
+          setError('Password is too weak');
+        } else if (err.code === 'auth/invalid-email') {
+          setError('Invalid email address');
+        } else if (err.response?.data?.detail) {
+          setError(String(err.response.data.detail));
+        } else {
+          setError('Failed to create account. Please try again.');
+        }
     } finally {
       setLoading(false);
     }
@@ -197,12 +226,6 @@ export default function Signup() {
                     Login here
                   </span>
                 </Link>
-              </p>
-            </div>
-
-            <div className="mt-4 pt-4 border-t text-sm text-gray-600">
-              <p className="mb-2">
-                <strong>Note:</strong> Only @iba.edu.pk email addresses are allowed to register.
               </p>
             </div>
           </div>

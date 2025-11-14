@@ -22,7 +22,7 @@ export default function Navbar() {
       if (firebaseUser) {
         try {
           const token = await firebaseUser.getIdToken();
-          
+
           // Verify token with backend
           const response = await axios.get(
             `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/auth/verify-token`,
@@ -32,14 +32,39 @@ export default function Navbar() {
               },
             }
           );
-          
+
           if (response.data.status === 'valid') {
-            setUser(response.data.user);
-            setIsAdmin(response.data.user.role === 'admin');
+            const backendUser = response.data.user || {};
+
+            // Ensure name is a safe string to render (avoid rendering an object)
+            let safeName = 'User';
+
+            if (typeof backendUser.name === 'string' && backendUser.name.trim() !== '') {
+              safeName = backendUser.name;
+            } else if (typeof backendUser.email === 'string' && backendUser.email.trim() !== '') {
+              safeName = backendUser.email;
+            } else if (typeof backendUser.name === 'number') {
+              safeName = String(backendUser.name);
+            } else if (backendUser.name && typeof backendUser.name === 'object') {
+              // Convert unexpected object to JSON for safe rendering (and log it)
+              console.warn('Navbar: backend returned non-string user.name:', backendUser.name);
+              try {
+                safeName = JSON.stringify(backendUser.name);
+                // optionally truncate long strings:
+                if (safeName.length > 60) safeName = safeName.slice(0, 57) + '...';
+              } catch (e) {
+                safeName = 'User';
+              }
+            }
+
+            const safeUser = { ...backendUser, name: safeName };
+            setUser(safeUser);
+            setIsAdmin(safeUser.role === 'admin');
           }
         } catch (error) {
-          console.log('Token verification failed:', error);
+          console.log('Token verification failed:', error.message || error);
           setUser(null);
+          setIsAdmin(false);
         }
       } else {
         setUser(null);
@@ -58,7 +83,7 @@ export default function Navbar() {
       setIsAdmin(false);
       router.push('/');
     } catch (error) {
-      console.error('Logout failed:', error);
+      console.error('Logout failed:', error.message || error);
     }
   };
 

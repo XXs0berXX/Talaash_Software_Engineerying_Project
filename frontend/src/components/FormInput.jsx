@@ -31,7 +31,7 @@ export default function FormInput({
         className={`input-field ${error ? 'border-danger' : ''}`}
         {...props}
       />
-      {error && <p className="text-error mt-1">{error}</p>}
+      {error && <p className="text-error mt-1">{error.message || error.msg || String(error)}</p>}
     </div>
   );
 }

@@ -17,13 +17,17 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS middleware configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001"],
+    allow_origins=[
+        "http://localhost:3000", 
+        "http://localhost:3001",
+        "http://127.0.0.1:3000",  # Add this
+        "http://127.0.0.1:3001"   # Add this
+    ],
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["*"],  # Make sure Authorization header is allowed
 )
 
 # Serve static files (uploads)
