@@ -21,7 +21,15 @@ export default function Navbar() {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         try {
-          const token = await firebaseUser.getIdToken();
+          // Attempt to get the token. This might fail if the user state is invalid.
+          const token = await firebaseUser.getIdToken(true); // Forces a refresh if token is nearing expiration
+
+          if (!token) {
+              // Should theoretically not happen if firebaseUser exists, but defensive check
+              setUser(null);
+              setLoading(false);
+              return;
+          }
           
           // Verify token with backend
           const response = await axios.get(
@@ -36,12 +44,22 @@ export default function Navbar() {
           if (response.data.status === 'valid') {
             setUser(response.data.user);
             setIsAdmin(response.data.user.role === 'admin');
+          } else {
+            // Handle case where backend returns status: invalid (though typically it's a 401)
+             setUser(null);
           }
         } catch (error) {
-          console.log('Token verification failed:', error);
+          // 💡 FIX: Safely handle errors (like the 422 or AxiosErrors) without crashing the component
+          console.error('Token verification failed:', error.response?.data?.detail || error.message);
+          
+          // If the backend verification fails, assume session is invalid and clear user state
           setUser(null);
+          
+          // You may also want to force sign out if the token failed backend verification:
+          // signOut(auth);
         }
       } else {
+        // No Firebase user signed in
         setUser(null);
         setIsAdmin(false);
       }
@@ -54,6 +72,9 @@ export default function Navbar() {
   const handleLogout = async () => {
     try {
       await signOut(auth);
+      // Clear local storage items created during login
+      localStorage.removeItem('authToken');
+      localStorage.removeItem('user');
       setUser(null);
       setIsAdmin(false);
       router.push('/');

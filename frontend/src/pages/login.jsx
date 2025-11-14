@@ -51,6 +51,9 @@ export default function Login() {
       // Get Firebase token
       const token = await userCredential.user.getIdToken();
 
+      // 💡 DEBUGGING LINE: Log the token to the browser console for inspection
+      console.log('Firebase ID Token Generated:', token);
+
       // Step 2: Validate token with backend
       const response = await axios.post(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/auth/login`,
@@ -80,8 +83,17 @@ export default function Login() {
       } else if (err.code === 'auth/wrong-password') {
         setError('Incorrect password');
       } else if (err.response?.data?.detail) {
-        setError(err.response.data.detail);
+        // Safely handle complex FastAPI error structures (like 422, 400, 401)
+        const detail = err.response.data.detail;
+        if (Array.isArray(detail) && detail.length > 0) {
+          setError(detail[0].msg || 'Validation failed');
+        } else if (typeof detail === 'string') {
+          setError(detail);
+        } else {
+          setError('An unknown backend error occurred.');
+        }
       } else {
+        // Handle network or other errors without a specific response object
         setError(err.message || 'Failed to login');
       }
     } finally {
