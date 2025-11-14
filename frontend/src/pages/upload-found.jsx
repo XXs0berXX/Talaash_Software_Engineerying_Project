@@ -28,7 +28,7 @@ function UploadFoundItemContent() {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         try {
-          // Attempt to get a fresh token every time the user state changes
+          // Attempt to get a fresh token every time the user state changes (for initial state)
           const userToken = await user.getIdToken();
           setToken(userToken);
           console.log("Firebase ID Token Generated:", userToken.substring(0, 30) + "...");
@@ -36,6 +36,8 @@ function UploadFoundItemContent() {
           console.error("Failed to get Firebase ID Token:", tokenError);
           setError("Authentication failed: Could not get a valid user token.");
         }
+      } else {
+        setToken(''); // Clear token on sign out
       }
     });
 
@@ -97,9 +99,21 @@ function UploadFoundItemContent() {
       setError('Image is required');
       return;
     }
+
+    // 🛑 CRITICAL FIX: Check for current user and force token refresh immediately before API call
+    const user = auth.currentUser;
+    if (!user) {
+        setError("User is not authenticated. Please refresh and log in.");
+        return;
+    }
     
-    if (!token) {
-        setError("User session is invalid. Please log out and log back in.");
+    let freshToken;
+    try {
+        // Force token refresh (passing true) to ensure a non-expired token
+        freshToken = await user.getIdToken(true); 
+        console.log('Using fresh token for API call.');
+    } catch (tokenError) {
+        setError('Failed to refresh authentication token. Please log out and log back in.');
         return;
     }
     // -----------------------
@@ -112,21 +126,17 @@ function UploadFoundItemContent() {
       uploadData.append('description', formData.description);
       uploadData.append('location', formData.location);
       
-      // 🎯 CRITICAL FIX: Date conversion and validation
-      const rawDate = formData.date_found; // Should be 'YYYY-MM-DDTHH:MM' format
+      // 🎯 CRITICAL FIX: Date format correction (adding seconds and Z)
+      const rawDate = formData.date_found; // 'YYYY-MM-DDTHH:MM' format
 
-      // 1. REGEX Check: Ensure the string is in the format expected from datetime-local.
       if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(rawDate)) {
-          // This ensures the user has selected a value that looks right, 
-          // preventing submission of the locale string visible in the images.
           setError('Invalid date/time format. Please use the calendar picker to select the value.');
           setLoading(false);
           return;
       }
       
-      // 2. Direct ISO Construction: Append :00.000Z to make a valid ISO 8601 UTC string.
-      // This is the most reliable way to send datetime-local data to FastAPI.
-      const dateToSubmit = rawDate + ':00';
+      // Direct ISO Construction: Append seconds, milliseconds, and Z (Zulu/UTC marker)
+const dateToSubmit = rawDate + ':00';
 
       uploadData.append('date_found', dateToSubmit);
       uploadData.append('file', formData.image);
@@ -137,7 +147,8 @@ function UploadFoundItemContent() {
         uploadData,
         {
           headers: {
-            'Authorization': `Bearer ${token}`,
+            // Use the freshly generated token here
+            'Authorization': `Bearer ${freshToken}`, 
             // Content-Type is intentionally omitted for FormData
           },
         }
@@ -156,16 +167,16 @@ function UploadFoundItemContent() {
         const fileInput = document.getElementById('image');
         if (fileInput) fileInput.value = '';
 
-        // Redirect after 2 seconds
+        // Redirect after 5 seconds (UX improvement)
         setTimeout(() => {
           router.push('/');
-        }, 2000);
+        }, 5000);
       }
     } catch (err) {
       console.error('Upload failed:', err);
       
       if (err.response?.status === 401 || err.response?.status === 403) {
-          setError('Authorization failed. Please log out and log back in.');
+          setError('Authorization failed. Invalid or expired token. Please log out and log back in.');
           
       } else if (err.response?.data?.detail) {
         const errorDetail = err.response.data.detail;

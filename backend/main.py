@@ -3,6 +3,13 @@ Main entry point for Talash Backend API
 FastAPI application with Firebase authentication and item management
 """
 
+
+from dotenv import load_dotenv
+
+# Load environment variables from .env file (must be done before other imports)
+load_dotenv()
+
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles

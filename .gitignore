@@ -3,6 +3,10 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Firebase credentials
+
+backend/firebase-service-account.json
+
 # Distribution / packaging
 .Python
 build/
@@ -73,3 +77,5 @@ logs/
 # Python virtual environments
 venv/
 backend/venv/
+backend/talashenv/
+
