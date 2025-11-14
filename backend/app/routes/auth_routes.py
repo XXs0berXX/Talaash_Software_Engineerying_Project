@@ -3,7 +3,9 @@ Authentication routes for user signup and login
 Handles Firebase authentication integration
 """
 from pydantic import BaseModel
-from fastapi import APIRouter, HTTPException, status, Depends
+# 💡 ADD Header and Annotated imports
+from fastapi import APIRouter, HTTPException, status, Depends, Header
+from typing import Annotated
 from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models.user_model import (
@@ -83,7 +85,7 @@ def signup(
 
 @router.post("/login")
 def login(
-    request: LoginRequest, # 💡 FIX: Accept the LoginRequest Pydantic model
+    request: LoginRequest, 
     db: Session = Depends(get_db)
 ):
     """
@@ -144,7 +146,8 @@ def login(
 
 @router.get("/verify-token")
 def verify_token(
-    authorization: str,
+    
+    authorization: Annotated[str | None, Header()] = None,
     db: Session = Depends(get_db)
 ):
     """
@@ -159,6 +162,15 @@ def verify_token(
     Raises:
         HTTPException: If token is invalid
     """
+    
+    # Check if header is present
+    if not authorization:
+         # Now we raise 401 Unauthorized, which is the correct HTTP status 
+         # when the Authorization header is missing, instead of a 422 Pydantic error.
+         raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authorization header is missing"
+        )
     
     # Extract token from header
     token = extract_token_from_header(authorization)
@@ -179,6 +191,7 @@ def verify_token(
     # Get user from database
     db_user = get_user_by_email(db, user_data.get("email"))
     if not db_user:
+        # User is authenticated via Firebase but not in local DB
         return {
             "status": "needs_signup",
             "email": user_data.get("email"),

@@ -68,11 +68,12 @@ export default function Login() {
         localStorage.setItem('authToken', token);
         localStorage.setItem('user', JSON.stringify(response.data.user));
 
-        // Redirect based on role
+        // 💥 FIX: Use window.location.replace() instead of router.push() to force 
+        // a hard reload, ensuring the entire app re-initializes with the new token.
         if (response.data.user.role === 'admin') {
-          router.push('/admin/dashboard');
+          window.location.replace('/admin/dashboard');
         } else {
-          router.push('/');
+          window.location.replace('/');
         }
       }
     } catch (err) {
