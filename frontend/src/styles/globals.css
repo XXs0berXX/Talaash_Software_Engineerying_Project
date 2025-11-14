@@ -2,10 +2,9 @@
  * Global Styles for Talash
  */
 
-@import 'tailwindcss/base';
-@import 'tailwindcss/components';
-@import 'tailwindcss/utilities';
-
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 * {
   margin: 0;
   padding: 0;
@@ -72,11 +71,13 @@ button {
 }
 
 .text-error {
-  @apply text-danger text-sm;
+/* Assuming 'danger' means red (or a primary error color) */
+@apply text-red-600 text-sm;
 }
 
 .text-success {
-  @apply text-success text-sm;
+/* Assuming 'success' means green (or a primary success color) */
+@apply text-green-600 text-sm;
 }
 
 /* Loading animation */
