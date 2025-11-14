@@ -1,5 +1,5 @@
 /**
- * Upload Found Item Page
+ * Report Found Item Page
  * Form for authenticated users to report found items
  */
 
@@ -11,7 +11,7 @@ import { auth } from '../lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import axios from 'axios';
 
-function UploadFoundItemContent() {
+function ReportFoundContent() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -19,7 +19,7 @@ function UploadFoundItemContent() {
   const [formData, setFormData] = useState({
     description: '',
     location: '',
-    date_found: '', // This holds the 'YYYY-MM-DDTHH:MM' string from datetime-local
+    date_found: '',
     image: null,
   });
   const router = useRouter();
@@ -28,16 +28,15 @@ function UploadFoundItemContent() {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         try {
-          // Attempt to get a fresh token every time the user state changes (for initial state)
           const userToken = await user.getIdToken();
           setToken(userToken);
-          console.log("Firebase ID Token Generated:", userToken.substring(0, 30) + "...");
+          console.log("Firebase ID Token Generated");
         } catch (tokenError) {
           console.error("Failed to get Firebase ID Token:", tokenError);
           setError("Authentication failed: Could not get a valid user token.");
         }
       } else {
-        setToken(''); // Clear token on sign out
+        setToken('');
       }
     });
 
@@ -79,7 +78,7 @@ function UploadFoundItemContent() {
     setError('');
     setSuccess('');
 
-    // --- Validation Checks ---
+    // Validation
     if (!formData.description.trim()) {
       setError('Description is required');
       return;
@@ -100,23 +99,21 @@ function UploadFoundItemContent() {
       return;
     }
 
-    // 🛑 CRITICAL FIX: Check for current user and force token refresh immediately before API call
+    // Get fresh token
     const user = auth.currentUser;
     if (!user) {
-        setError("User is not authenticated. Please refresh and log in.");
-        return;
+      setError("User is not authenticated. Please refresh and log in.");
+      return;
     }
-    
+
     let freshToken;
     try {
-        // Force token refresh (passing true) to ensure a non-expired token
-        freshToken = await user.getIdToken(true); 
-        console.log('Using fresh token for API call.');
+      freshToken = await user.getIdToken(true);
+      console.log('Using fresh token for API call.');
     } catch (tokenError) {
-        setError('Failed to refresh authentication token. Please log out and log back in.');
-        return;
+      setError('Failed to refresh authentication token. Please log out and log back in.');
+      return;
     }
-    // -----------------------
 
     try {
       setLoading(true);
@@ -125,19 +122,17 @@ function UploadFoundItemContent() {
       const uploadData = new FormData();
       uploadData.append('description', formData.description);
       uploadData.append('location', formData.location);
-      
-      // 🎯 CRITICAL FIX: Date format correction (adding seconds and Z)
-      const rawDate = formData.date_found; // 'YYYY-MM-DDTHH:MM' format
+
+      // Date format validation and conversion
+      const rawDate = formData.date_found;
 
       if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(rawDate)) {
-          setError('Invalid date/time format. Please use the calendar picker to select the value.');
-          setLoading(false);
-          return;
+        setError('Invalid date/time format. Please use the calendar picker.');
+        setLoading(false);
+        return;
       }
-      
-      // Direct ISO Construction: Append seconds, milliseconds, and Z (Zulu/UTC marker)
-const dateToSubmit = rawDate + ':00';
 
+      const dateToSubmit = rawDate + ':00';
       uploadData.append('date_found', dateToSubmit);
       uploadData.append('file', formData.image);
 
@@ -147,9 +142,7 @@ const dateToSubmit = rawDate + ':00';
         uploadData,
         {
           headers: {
-            // Use the freshly generated token here
-            'Authorization': `Bearer ${freshToken}`, 
-            // Content-Type is intentionally omitted for FormData
+            'Authorization': `Bearer ${freshToken}`,
           },
         }
       );
@@ -167,38 +160,33 @@ const dateToSubmit = rawDate + ':00';
         const fileInput = document.getElementById('image');
         if (fileInput) fileInput.value = '';
 
-        // Redirect after 5 seconds (UX improvement)
+        // Redirect after 3 seconds
         setTimeout(() => {
-          router.push('/');
-        }, 5000);
+          router.push('/dashboard');
+        }, 3000);
       }
     } catch (err) {
       console.error('Upload failed:', err);
-      
+
       if (err.response?.status === 401 || err.response?.status === 403) {
-          setError('Authorization failed. Invalid or expired token. Please log out and log back in.');
-          
+        setError('Authorization failed. Please log out and log back in.');
       } else if (err.response?.data?.detail) {
         const errorDetail = err.response.data.detail;
-        
-        // Handle FastAPI validation error array (422)
-        if (Array.isArray(errorDetail)) {
-             const formattedError = errorDetail
-                .map(d => `${d.loc.filter(l => typeof l === 'string').join(' > ')}: ${d.msg}`)
-                .join('; ');
-             setError('Validation Error: ' + formattedError);
-        // Handle simple error message string (400)
-        } else if (typeof errorDetail === 'string') {
-             setError(errorDetail);
-        // Handle other object details
-        } else if (typeof errorDetail === 'object' && errorDetail !== null) {
-            setError(errorDetail.detail || JSON.stringify(errorDetail)); 
-        } else {
-             setError(err.message || 'Failed to upload item due to an unknown server response.');
-        }
 
+        if (Array.isArray(errorDetail)) {
+          const formattedError = errorDetail
+            .map(d => `${d.loc.filter(l => typeof l === 'string').join(' > ')}: ${d.msg}`)
+            .join('; ');
+          setError('Validation Error: ' + formattedError);
+        } else if (typeof errorDetail === 'string') {
+          setError(errorDetail);
+        } else if (typeof errorDetail === 'object' && errorDetail !== null) {
+          setError(errorDetail.detail || JSON.stringify(errorDetail));
+        } else {
+          setError(err.message || 'Failed to report item.');
+        }
       } else {
-        setError(err.message || 'Failed to upload item. Check network connection or backend server status.');
+        setError(err.message || 'Failed to report item. Check your connection.');
       }
     } finally {
       setLoading(false);
@@ -207,23 +195,22 @@ const dateToSubmit = rawDate + ':00';
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Navbar is intentionally omitted here to prevent double rendering */}
       <div className="container-custom py-12 flex justify-center">
         <div className="w-full max-w-2xl">
-          <div className="card">
+          <div className="bg-white rounded-lg shadow-md p-8">
             <h1 className="text-3xl font-bold mb-2">Report Found Item</h1>
             <p className="text-gray-600 mb-6">
               Help reunite lost items with their owners
             </p>
 
             {error && (
-              <div className="bg-danger bg-opacity-10 text-danger p-4 rounded-lg mb-4">
+              <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-lg mb-4">
                 {error}
               </div>
             )}
 
             {success && (
-              <div className="bg-success bg-opacity-10 text-success p-4 rounded-lg mb-4">
+              <div className="bg-green-50 border border-green-200 text-green-700 p-4 rounded-lg mb-4">
                 {success}
               </div>
             )}
@@ -251,7 +238,6 @@ const dateToSubmit = rawDate + ':00';
                 disabled={loading}
               />
 
-              {/* Input type is correctly set to 'datetime-local' */}
               <FormInput
                 label="Date & Time Found"
                 type="datetime-local"
@@ -264,7 +250,7 @@ const dateToSubmit = rawDate + ':00';
 
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Item Image <span className="text-danger">*</span>
+                  Item Image <span className="text-red-600">*</span>
                 </label>
                 <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center cursor-pointer hover:border-primary transition-colors">
                   <input
@@ -275,10 +261,7 @@ const dateToSubmit = rawDate + ':00';
                     disabled={loading}
                     className="hidden"
                   />
-                  <label
-                    htmlFor="image"
-                    className="cursor-pointer block"
-                  >
+                  <label htmlFor="image" className="cursor-pointer block">
                     {formData.image ? (
                       <div>
                         <p className="font-semibold text-primary">
@@ -290,9 +273,7 @@ const dateToSubmit = rawDate + ':00';
                       </div>
                     ) : (
                       <div>
-                        <p className="text-gray-600">
-                          Click to upload image
-                        </p>
+                        <p className="text-gray-600">Click to upload image</p>
                         <p className="text-sm text-gray-500 mt-1">
                           Max 5MB • JPG, PNG, GIF, WebP
                         </p>
@@ -305,7 +286,7 @@ const dateToSubmit = rawDate + ':00';
               <button
                 type="submit"
                 disabled={loading}
-                className="btn-primary w-full"
+                className="w-full bg-primary hover:bg-opacity-90 text-white font-bold py-3 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {loading ? 'Uploading...' : 'Report Item'}
               </button>
@@ -327,10 +308,10 @@ const dateToSubmit = rawDate + ':00';
   );
 }
 
-export default function UploadFoundItem() {
+export default function ReportFound() {
   return (
     <AuthGuard>
-      <UploadFoundItemContent />
+      <ReportFoundContent />
     </AuthGuard>
   );
 }

@@ -15,7 +15,6 @@ from app.models.user_model import (
     get_user_by_email,
     user_exists
 )
-from app.utils.validators import validate_iba_email
 from app.utils.firebase_verify import (
     extract_token_from_header,
     get_user_from_token,
@@ -26,6 +25,21 @@ router = APIRouter()
 
 # Initialize Firebase on startup
 initialize_firebase()
+
+
+# 💡 FIXED: Accept both @iba.edu.pk and @khi.iba.edu.pk
+def validate_iba_email(email: str) -> bool:
+    """
+    Validate that email belongs to IBA domain
+    Accepts both @iba.edu.pk and @khi.iba.edu.pk
+    
+    Args:
+        email: Email address to validate
+        
+    Returns:
+        True if email ends with @iba.edu.pk or @khi.iba.edu.pk
+    """
+    return email.endswith('@iba.edu.pk') or email.endswith('@khi.iba.edu.pk')
 
 
 # 💡 FIX: Inherit from BaseModel to define the expected JSON body structure
@@ -43,7 +57,7 @@ def signup(
     """
     User signup endpoint
     
-    - Validates that email ends with @iba.edu.pk
+    - Validates that email ends with @iba.edu.pk or @khi.iba.edu.pk
     - Creates user record in database
     - Frontend handles Firebase Authentication
     
@@ -62,7 +76,7 @@ def signup(
     if not validate_iba_email(request.email):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only @iba.edu.pk email addresses are allowed"
+            detail="Only @iba.edu.pk or @khi.iba.edu.pk email addresses are allowed"
         )
     
     # Check if user already exists

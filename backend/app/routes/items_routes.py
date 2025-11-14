@@ -6,9 +6,8 @@ Handles upload, retrieval, and search functionality
 import os
 import uuid
 from datetime import datetime
-# 💥 FIX 1: Import necessary dependencies for Form data and Security
 from fastapi import APIRouter, HTTPException, status, Depends, File, UploadFile, Query, Form
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials # <-- ADD THIS IMPORT
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models.item_model import (
@@ -33,13 +32,11 @@ from app.utils.validators import (
     validate_required_fields
 )
 from app.utils.firebase_verify import (
-    # 💥 FIX 2: extract_token_from_header is no longer needed in the handler function
     get_user_from_token,
     initialize_firebase
 )
 
 router = APIRouter()
-# 💥 FIX 3: Initialize the security scheme
 security = HTTPBearer()
 
 # Configuration
@@ -58,39 +55,17 @@ def validate_image_file(filename: str) -> bool:
 
 @router.post("/found", response_model=FoundItemResponse, status_code=status.HTTP_201_CREATED)
 async def upload_found_item(
-    # 💥 CRITICAL FIX: Use Form() for non-file fields and Depends(security) for the token
     description: str = Form(...),
     location: str = Form(...),
     date_found: str = Form(...),
     file: UploadFile = File(...),
-    token: HTTPAuthorizationCredentials = Depends(security), # <-- Inject token here
+    token: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db)
 ):
-    """
-    Upload a found item with image
+    """Upload a found item with image"""
     
-    Requires Firebase authentication token in Authorization header
-    
-    Form Data:
-        description: Description of the found item
-        location: Location where item was found
-        date_found: Date and time found (ISO format: "2024-01-15T14:30:00")
-        file: Image file (max 5MB, jpg/png/gif/webp)
-    
-    Headers:
-        authorization: "Bearer <token>"
-    
-    Returns:
-        Created found item object with image URL
-        
-    Raises:
-        HTTPException: If authentication fails, validation fails, or upload fails
-    """
-    
-    # 💥 FIX 4: Use the injected token dependency to extract the string
     token_str = token.credentials
     if not token_str:
-        # This check is mostly redundant due to Depends(security) but kept for clarity
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid authorization token provided."
@@ -113,7 +88,6 @@ async def upload_found_item(
         )
     
     # Validate file
-    # file.filename is now available directly from the UploadFile object
     if not file.filename:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -126,19 +100,15 @@ async def upload_found_item(
             detail=f"Invalid file type. Allowed: {', '.join(ALLOWED_EXTENSIONS)}"
         )
     
-    # Check file size (Read content *before* proceeding)
+    # Check file size
     file_content = await file.read()
-    # Reset file pointer to the beginning for safety if needed later (though not strictly necessary here)
-    await file.seek(0) 
+    await file.seek(0)
     
     if not validate_file_size(len(file_content), MAX_FILE_SIZE_MB):
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
             detail=f"File size exceeds {MAX_FILE_SIZE_MB}MB limit"
         )
-    
-    # Validate required fields (This can be simplified now that FastAPI handles required fields via Form(...))
-    # Keep validation for complex logic like date format
     
     # Parse date
     try:
@@ -158,7 +128,6 @@ async def upload_found_item(
     file_path = os.path.join(UPLOAD_DIR, unique_filename)
     
     try:
-        # Write file content that was previously read
         with open(file_path, "wb") as f:
             f.write(file_content)
     except Exception as e:
@@ -183,8 +152,6 @@ async def upload_found_item(
     return db_item
 
 
-# --- Endpoints below this line remain the same, but the /lost endpoint needs the same fix ---
-
 @router.get("/found", response_model=FoundItemListResponse)
 def get_found_items_list(
     db: Session = Depends(get_db),
@@ -192,9 +159,7 @@ def get_found_items_list(
     limit: int = Query(10, ge=1, le=50),
     status_filter: str = Query("approved", regex="^(pending|approved|claimed|all)$")
 ):
-    """
-    Get list of found items
-    """
+    """Get list of found items"""
     
     query = db.query(FoundItemDB)
     
@@ -210,14 +175,48 @@ def get_found_items_list(
     )
 
 
+# 🆕 NEW ENDPOINT: Get current user's found items
+@router.get("/found/my-items", response_model=FoundItemListResponse)
+def get_my_found_items(
+    token: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_db)
+):
+    """
+    Get all found items reported by the current authenticated user
+    """
+    
+    # Extract and verify token
+    token_str = token.credentials
+    user_data = get_user_from_token(token_str)
+    if not user_data:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token"
+        )
+    
+    # Get user from database
+    db_user = get_user_by_email(db, user_data.get("email"))
+    if not db_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found in database"
+        )
+    
+    # Get user's found items (all statuses)
+    items = db.query(FoundItemDB).filter(FoundItemDB.user_id == db_user.id).all()
+    
+    return FoundItemListResponse(
+        items=items,
+        total=len(items)
+    )
+
+
 @router.get("/found/{item_id}", response_model=FoundItemResponse)
 def get_found_item(
     item_id: int,
     db: Session = Depends(get_db)
 ):
-    """
-    Get details of a specific found item
-    """
+    """Get details of a specific found item"""
     
     db_item = get_found_item_by_id(db, item_id)
     if not db_item:
@@ -232,7 +231,6 @@ def get_found_item(
 @router.get("/found/user/{user_id}")
 def get_user_found_items(
     user_id: int,
-    # 💥 FIX 5: Use Depends(security) for authentication here too
     token: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db)
 ):
@@ -260,9 +258,65 @@ def get_user_found_items(
     }
 
 
+# 🗑️ NEW ENDPOINT: Delete found item
+@router.delete("/found/{item_id}")
+def delete_found_item(
+    item_id: int,
+    token: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_db)
+):
+    """Delete a found item (only owner can delete)"""
+    
+    # Extract and verify token
+    token_str = token.credentials
+    user_data = get_user_from_token(token_str)
+    if not user_data:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token"
+        )
+    
+    # Get user from database
+    db_user = get_user_by_email(db, user_data.get("email"))
+    if not db_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    # Get item
+    db_item = get_found_item_by_id(db, item_id)
+    if not db_item:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Item not found"
+        )
+    
+    # Check ownership
+    if db_item.user_id != db_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only delete your own items"
+        )
+    
+    # Delete file if exists
+    if db_item.image_url:
+        file_path = db_item.image_url.lstrip('/')
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except Exception as e:
+                print(f"Failed to delete file: {e}")
+    
+    # Delete from database
+    db.delete(db_item)
+    db.commit()
+    
+    return {"status": "success", "message": "Item deleted successfully"}
+
+
 @router.post("/lost", response_model=LostItemResponse, status_code=status.HTTP_201_CREATED)
 async def upload_lost_item(
-    # 💥 CRITICAL FIX: Apply Form() and Depends(security) to the /lost route as well
     description: str = Form(...),
     location: str = Form(...),
     date_lost: str = Form(...),
@@ -270,9 +324,7 @@ async def upload_lost_item(
     token: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db)
 ):
-    """
-    Upload a lost item with image
-    """
+    """Upload a lost item with image"""
     
     # Extract and verify token
     token_str = token.credentials
@@ -362,9 +414,7 @@ def get_lost_items_list(
     limit: int = Query(10, ge=1, le=50),
     status_filter: str = Query("approved", regex="^(pending|approved|found|all)$")
 ):
-    """
-    Get list of lost items
-    """
+    """Get list of lost items"""
     
     query = db.query(LostItemDB)
     
@@ -378,3 +428,96 @@ def get_lost_items_list(
         "items": items,
         "total": total
     }
+
+
+# 🆕 NEW ENDPOINT: Get current user's lost items
+@router.get("/lost/my-items")
+def get_my_lost_items(
+    token: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_db)
+):
+    """
+    Get all lost items reported by the current authenticated user
+    """
+    
+    # Extract and verify token
+    token_str = token.credentials
+    user_data = get_user_from_token(token_str)
+    if not user_data:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token"
+        )
+    
+    # Get user from database
+    db_user = get_user_by_email(db, user_data.get("email"))
+    if not db_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found in database"
+        )
+    
+    # Get user's lost items (all statuses)
+    items = db.query(LostItemDB).filter(LostItemDB.user_id == db_user.id).all()
+    
+    return {
+        "items": items,
+        "total": len(items)
+    }
+
+
+# 🗑️ NEW ENDPOINT: Delete lost item
+@router.delete("/lost/{item_id}")
+def delete_lost_item(
+    item_id: int,
+    token: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_db)
+):
+    """Delete a lost item (only owner can delete)"""
+    
+    # Extract and verify token
+    token_str = token.credentials
+    user_data = get_user_from_token(token_str)
+    if not user_data:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token"
+        )
+    
+    # Get user from database
+    db_user = get_user_by_email(db, user_data.get("email"))
+    if not db_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    # Get item
+    db_item = db.query(LostItemDB).filter(LostItemDB.id == item_id).first()
+    if not db_item:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Item not found"
+        )
+    
+    # Check ownership
+    if db_item.user_id != db_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only delete your own items"
+        )
+    
+    # Delete file if exists
+    if db_item.image_url:
+        file_path = db_item.image_url.lstrip('/')
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except Exception as e:
+                print(f"Failed to delete file: {e}")
+    
+    # Delete from database
+    db.delete(db_item)
+    db.commit()
+    
+    return {"status": "success", "message": "Item deleted successfully"}

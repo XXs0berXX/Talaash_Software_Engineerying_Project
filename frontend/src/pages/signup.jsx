@@ -6,7 +6,6 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
-import Navbar from '../components/Navbar';
 import FormInput from '../components/FormInput';
 import { auth } from '../lib/firebase';
 import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
@@ -42,8 +41,12 @@ export default function Signup() {
       return false;
     }
 
-    if (!formData.email.endsWith('@iba.edu.pk')) {
-      setError('Only @iba.edu.pk email addresses are allowed');
+    // Fixed validation: Accept both @iba.edu.pk and @khi.iba.edu.pk
+    const isValidIBAEmail = formData.email.endsWith('@iba.edu.pk') || 
+                           formData.email.endsWith('@khi.iba.edu.pk');
+    
+    if (!isValidIBAEmail) {
+      setError('Only @iba.edu.pk or @khi.iba.edu.pk email addresses are allowed');
       return false;
     }
 
@@ -101,8 +104,8 @@ export default function Signup() {
       );
 
       if (response.status === 201) {
-        // Success - redirect to login or home
-        router.push('/login');
+        // Success - redirect to dashboard
+        router.push('/dashboard');
       }
     } catch (err) {
       console.error('Signup failed:', err);
@@ -120,91 +123,99 @@ export default function Signup() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Navbar />
+    <div className="min-h-screen bg-gradient-to-br from-primary to-secondary flex items-center justify-center py-12 px-4">
+      <div className="w-full max-w-md">
+        <div className="bg-white rounded-2xl shadow-2xl p-8">
+          {/* Header */}
+          <div className="text-center mb-8">
+            <h1 className="text-4xl font-bold text-gray-800 mb-2">Join Talash</h1>
+            <p className="text-gray-600">Create your account to get started</p>
+          </div>
 
-      <div className="container-custom py-12 flex justify-center">
-        <div className="w-full max-w-md">
-          <div className="card">
-            <h1 className="text-3xl font-bold mb-2">Create Account</h1>
-            <p className="text-gray-600 mb-6">Join Talash today</p>
-
-            {error && (
-              <div className="bg-danger bg-opacity-10 text-danger p-4 rounded-lg mb-4">
-                {error}
-              </div>
-            )}
-
-            <form onSubmit={handleSubmit}>
-              <FormInput
-                label="Full Name"
-                type="text"
-                placeholder="John Doe"
-                name="name"
-                value={formData.name}
-                onChange={handleChange}
-                required
-                disabled={loading}
-              />
-
-              <FormInput
-                label="IBA Email"
-                type="email"
-                placeholder="john@iba.edu.pk"
-                name="email"
-                value={formData.email}
-                onChange={handleChange}
-                required
-                disabled={loading}
-              />
-
-              <FormInput
-                label="Password"
-                type="password"
-                placeholder="••••••••"
-                name="password"
-                value={formData.password}
-                onChange={handleChange}
-                required
-                disabled={loading}
-              />
-
-              <FormInput
-                label="Confirm Password"
-                type="password"
-                placeholder="••••••••"
-                name="confirmPassword"
-                value={formData.confirmPassword}
-                onChange={handleChange}
-                required
-                disabled={loading}
-              />
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="btn-primary w-full mb-4"
-              >
-                {loading ? 'Creating Account...' : 'Sign Up'}
-              </button>
-            </form>
-
-            <div className="text-center">
-              <p className="text-gray-600">
-                Already have an account?{' '}
-                <Link href="/login">
-                  <span className="text-primary font-bold cursor-pointer hover:underline">
-                    Login here
-                  </span>
-                </Link>
-              </p>
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-lg mb-6">
+              {error}
             </div>
+          )}
 
-            <div className="mt-4 pt-4 border-t text-sm text-gray-600">
-              <p className="mb-2">
-                <strong>Note:</strong> Only @iba.edu.pk email addresses are allowed to register.
-              </p>
-            </div>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <FormInput
+              label="Full Name"
+              type="text"
+              placeholder="John Doe"
+              name="name"
+              value={formData.name}
+              onChange={handleChange}
+              required
+              disabled={loading}
+            />
+
+            <FormInput
+              label="IBA Email"
+              type="email"
+              placeholder="john@khi.iba.edu.pk"
+              name="email"
+              value={formData.email}
+              onChange={handleChange}
+              required
+              disabled={loading}
+            />
+
+            <FormInput
+              label="Password"
+              type="password"
+              placeholder="••••••••"
+              name="password"
+              value={formData.password}
+              onChange={handleChange}
+              required
+              disabled={loading}
+            />
+
+            <FormInput
+              label="Confirm Password"
+              type="password"
+              placeholder="••••••••"
+              name="confirmPassword"
+              value={formData.confirmPassword}
+              onChange={handleChange}
+              required
+              disabled={loading}
+            />
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-primary hover:bg-opacity-90 text-white font-bold py-3 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading ? 'Creating Account...' : 'Sign Up'}
+            </button>
+          </form>
+
+          <div className="mt-6 text-center">
+            <p className="text-gray-600">
+              Already have an account?{' '}
+              <Link href="/login">
+                <span className="text-primary font-bold cursor-pointer hover:underline">
+                  Login here
+                </span>
+              </Link>
+            </p>
+          </div>
+
+          <div className="mt-6 pt-6 border-t border-gray-200">
+            <p className="text-sm text-gray-500 text-center">
+              <strong>Note:</strong> Only @iba.edu.pk or @khi.iba.edu.pk email addresses are allowed
+            </p>
+          </div>
+
+          {/* Back to Home Link */}
+          <div className="mt-4 text-center">
+            <Link href="/">
+              <span className="text-sm text-gray-500 hover:text-primary cursor-pointer">
+                ← Back to Home
+              </span>
+            </Link>
           </div>
         </div>
       </div>

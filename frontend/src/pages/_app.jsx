@@ -1,19 +1,28 @@
 // frontend/src/pages/_app.jsx
 
-import '../styles/globals.css'; //  This is the critical line!
-import Navbar from '../components/Navbar'; 
-// Assuming you have an AuthProvider component for context/state management
-// import { AuthProvider } from '../context/AuthContext'; 
+import '../styles/globals.css';
+import { useRouter } from 'next/router';
+import Navbar from '../components/Navbar';
 
 function MyApp({ Component, pageProps }) {
-  // Replace the simple fragment with your actual structure if needed
+  const router = useRouter();
+  
+  // Pages that should NOT show the navbar
+  const noNavbarPages = [
+    '/',           // Landing page (has its own design)
+    '/login',      // Login page (has its own navbar)
+    '/signup',     // Signup page (has its own navbar)
+  ];
+  
+  // Check if current page should show navbar
+  const showNavbar = !noNavbarPages.includes(router.pathname);
+
   return (
     <>
-      {/* If you have a layout component wrapping all pages, place it here. */}
-      {/* For now, we'll assume Navbar is a global component */}
-      <Navbar /> 
+      {/* Only show navbar on pages that need it */}
+      {showNavbar && <Navbar />}
       
-      {/* Component is the currently active page (index.jsx, login.jsx, etc.) */}
+      {/* Render the active page */}
       <Component {...pageProps} />
     </>
   );

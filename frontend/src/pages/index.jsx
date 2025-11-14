@@ -1,151 +1,82 @@
-// frontend/src/pages/index.jsx
-
 /**
- * Home Page
- * Main landing page with featured items and search
+ * Landing Page - For Non-Authenticated Users
+ * Simple page with Login/Signup focus
  */
 
 import React, { useState, useEffect } from 'react';
-import ItemCard from '../components/ItemCard';
 import axios from 'axios';
 import Link from 'next/link';
-import useAuth from '../../hooks/useAuth'; 
-import { useRouter } from 'next/router'; 
+import { useRouter } from 'next/router';
+import useAuth from '../../hooks/useAuth';
 
 export default function Home() {
-  const [items, setItems] = useState([]);
-  const [loadingItems, setLoadingItems] = useState(true);
-  const [error, setError] = useState(null);
-  
   const { isAuthenticated, loading: loadingAuth } = useAuth();
   const router = useRouter();
 
-
+  // Redirect to dashboard if already logged in
   useEffect(() => {
-    fetchItems();
-  }, []);
-
-  const fetchItems = async () => {
-    try {
-      setLoadingItems(true);
-      const response = await axios.get(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/found`,
-        {
-          params: {
-            status_filter: 'approved',
-            limit: 12,
-          },
-        }
-      );
-      setItems(response.data.items);
-      setError(null);
-    } catch (err) {
-      console.error('Failed to fetch items:', err);
-      setError('Failed to load items');
-    } finally {
-      setLoadingItems(false);
+    if (!loadingAuth && isAuthenticated) {
+      router.push('/dashboard');
     }
-  };
-    const handleReportRedirect = (type) => {
-      if (loadingAuth) return; 
+  }, [isAuthenticated, loadingAuth, router]);
 
-      if (isAuthenticated) {
-          const path = type === 'found' ? '/report-found' : '/report-lost';
-          router.push(path);
-      } else {
-          router.push('/login');
-      }
-  };
+  // Show loading while checking auth
+  if (loadingAuth) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="spinner w-12 h-12 border-4 border-primary border-t-secondary"></div>
+      </div>
+    );
+  }
+
+  // Don't render landing page if authenticated (will redirect)
+  if (isAuthenticated) {
+    return null;
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {}
-      
-      {/* Hero Section */}
-      <div className="bg-gradient-to-r from-primary to-secondary text-white py-16">
+      {/* Simple Hero Section */}
+      <div className="bg-gradient-to-r from-primary to-secondary text-white min-h-screen flex items-center">
         <div className="container-custom text-center">
-          <h1 className="text-5xl font-bold mb-4">Welcome to Talash</h1>
-          <p className="text-xl mb-8">Campus Lost and Found Portal</p>
-          <p className="text-lg mb-8">
-            Report found items or search for your lost belongings
+          <h1 className="text-6xl font-bold mb-6">Welcome to Talash</h1>
+          <p className="text-2xl mb-4">Campus Lost and Found Portal</p>
+          <p className="text-lg mb-12 max-w-2xl mx-auto">
+            Connect with your campus community to find lost items and help others recover their belongings
           </p>
-          {}
-          <Link href={isAuthenticated ? '/search' : '/signup'}>
-            <button className="bg-white text-primary px-8 py-3 rounded-lg font-bold hover:bg-opacity-90 transition-all">
-              {isAuthenticated ? 'Search Items' : 'Get Started'}
-            </button>
-          </Link>
-        </div>
-      </div>
 
-      {/* Statistics Section (No Change) */}
-      <div className="bg-white py-12 border-b">
-        <div className="container-custom">
-          <div className="grid grid-cols-3 gap-8 text-center">
-            <div>
-              <h3 className="text-3xl font-bold text-primary">
-                {items.length}+
-              </h3>
-              <p className="text-gray-600 mt-2">Items Found</p>
+          {/* CTA Buttons */}
+          <div className="flex gap-4 justify-center mb-16">
+            <Link href="/signup">
+              <button className="bg-white text-primary px-10 py-4 rounded-lg font-bold text-lg hover:bg-opacity-90 transition-all shadow-lg">
+                Get Started
+              </button>
+            </Link>
+            <Link href="/login">
+              <button className="bg-transparent border-2 border-white text-white px-10 py-4 rounded-lg font-bold text-lg hover:bg-white hover:text-primary transition-all">
+                Login
+              </button>
+            </Link>
+          </div>
+
+          {/* Feature Highlights */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mt-16 max-w-4xl mx-auto">
+            <div className="bg-white bg-opacity-10 backdrop-blur-sm p-6 rounded-lg">
+              <div className="text-4xl mb-3">🔍</div>
+              <h3 className="text-xl font-bold mb-2">Search Items</h3>
+              <p className="text-sm">Browse through found items on campus</p>
             </div>
-            <div>
-              <h3 className="text-3xl font-bold text-primary">100+</h3>
-              <p className="text-gray-600 mt-2">Items Returned</p>
+            <div className="bg-white bg-opacity-10 backdrop-blur-sm p-6 rounded-lg">
+              <div className="text-4xl mb-3">📢</div>
+              <h3 className="text-xl font-bold mb-2">Report Lost/Found</h3>
+              <p className="text-sm">Help the community by reporting items</p>
             </div>
-            <div>
-              <h3 className="text-3xl font-bold text-primary">50+</h3>
-              <p className="text-gray-600 mt-2">Happy Users</p>
+            <div className="bg-white bg-opacity-10 backdrop-blur-sm p-6 rounded-lg">
+              <div className="text-4xl mb-3">🤝</div>
+              <h3 className="text-xl font-bold mb-2">Connect & Reunite</h3>
+              <p className="text-sm">Reunite lost items with their owners</p>
             </div>
           </div>
-        </div>
-      </div>
-
-      {/* Featured Items */}
-      <div className="container-custom py-16">
-        <h2 className="text-3xl font-bold mb-8">Recently Found Items</h2>
-
-        {loadingItems ? (
-          <div className="flex justify-center items-center py-12">
-            <div className="spinner w-8 h-8 border-4 border-primary border-t-secondary"></div>
-          </div>
-        ) : error ? (
-          <div className="bg-danger bg-opacity-10 text-danger p-4 rounded-lg text-center">
-            {error}
-          </div>
-        ) : items.length === 0 ? (
-          <div className="bg-gray-100 p-8 rounded-lg text-center">
-            <p className="text-gray-600 mb-4">No items found yet</p>
-            {}
-            <button 
-                className="btn-primary"
-                onClick={() => handleReportRedirect('found')}
-            >
-              Sign in to report an item
-            </button>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {items.map((item) => (
-              <ItemCard key={item.id} item={item} type="found" showClaimButton={false} />
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* CTA Section */}
-      <div className="bg-primary text-white py-16">
-        <div className="container-custom text-center">
-          <h2 className="text-3xl font-bold mb-4">Lost something?</h2>
-          <p className="text-lg mb-8">
-            Report your lost item and our community will help you find it
-          </p>
-          {}
-          <button 
-              className="bg-secondary hover:bg-opacity-90 text-white px-8 py-3 rounded-lg font-bold transition-all"
-              onClick={() => handleReportRedirect('lost')}
-          >
-            Report Lost Item
-          </button>
         </div>
       </div>
 
