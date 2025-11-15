@@ -116,12 +116,12 @@ function DashboardContent() {
           <p className="text-lg mb-8">Welcome back! What would you like to do today?</p>
 
           {/* Quick Action Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl">
             <Link href="/search">
               <div className="bg-white bg-opacity-10 backdrop-blur-sm p-6 rounded-lg hover:bg-opacity-20 transition-all cursor-pointer border border-white border-opacity-20">
                 <div className="text-3xl mb-2">🔍</div>
                 <h3 className="text-xl font-bold mb-1">Search Items</h3>
-                <p className="text-sm opacity-90">Looking for something you lost?</p>
+                <p className="text-sm opacity-90">Find your lost belongings</p>
               </div>
             </Link>
 
@@ -129,17 +129,16 @@ function DashboardContent() {
               <div className="bg-white bg-opacity-10 backdrop-blur-sm p-6 rounded-lg hover:bg-opacity-20 transition-all cursor-pointer border border-white border-opacity-20">
                 <div className="text-3xl mb-2">😢</div>
                 <h3 className="text-xl font-bold mb-1">Report Lost</h3>
-                <p className="text-sm opacity-90">Did you lose something?</p>
+                <p className="text-sm opacity-90">Report a lost item</p>
               </div>
             </Link>
+          </div>
 
-            <Link href="/report-found">
-              <div className="bg-white bg-opacity-10 backdrop-blur-sm p-6 rounded-lg hover:bg-opacity-20 transition-all cursor-pointer border border-white border-opacity-20">
-                <div className="text-3xl mb-2">✨</div>
-                <h3 className="text-xl font-bold mb-1">Report Found</h3>
-                <p className="text-sm opacity-90">Did you find something?</p>
-              </div>
-            </Link>
+          {/* Info Box */}
+          <div className="mt-6 bg-white bg-opacity-10 backdrop-blur-sm p-4 rounded-lg border border-white border-opacity-20 max-w-2xl">
+            <p className="text-sm opacity-90">
+              💡 <strong>Found something?</strong> Please submit it to the Lost & Found Office. Our admin will add it to the system.
+            </p>
           </div>
         </div>
       </div>
@@ -209,7 +208,7 @@ function DashboardContent() {
         {activeTab === 'browse' && (
           <div>
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-bold">Reported Items</h2>
+              <h2 className="text-2xl font-bold">Items You Can Claim</h2>
               <Link href="/search">
                 <button className="text-primary hover:underline font-semibold">
                   View All →

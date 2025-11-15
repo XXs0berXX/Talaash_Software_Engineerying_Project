@@ -4,7 +4,8 @@ Handles admin signup, login, and item moderation
 """
 
 import os
-from fastapi import APIRouter, HTTPException, status, Depends, Query, Header
+from datetime import datetime
+from fastapi import APIRouter, HTTPException, status, Depends, Query, Header, File, UploadFile, Form
 from typing import Annotated
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -185,6 +186,106 @@ def admin_dashboard(
     
     # Extract and verify token
     token = extract_token_from_header(authorization)
+    print(f"DEBUG: Extracted token: {token[:20] if token else 'None'}...")
+    
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authorization header format"
+        )
+    
+    user_data = get_user_from_token(token)
+    print(f"DEBUG: User data from token: {user_data}")
+    
+    if not user_data:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token"
+        )
+    
+    # Get user and verify admin
+    db_user = get_user_by_email(db, user_data.get("email"))
+    print(f"DEBUG: DB User: {db_user.email if db_user else 'None'}, Role: {db_user.role if db_user else 'None'}")
+    
+    if not db_user or db_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Access denied. Admin privileges required. Current role: {db_user.role if db_user else 'No user found'}"
+        )
+    
+    # Import FoundItemDB here to avoid circular imports
+    from app.models.item_model import FoundItemDB
+    
+    # Get statistics
+    pending_items = db.query(func.count(FoundItemDB.id)).filter(FoundItemDB.status == "pending").scalar()
+    total_items = db.query(func.count(FoundItemDB.id)).scalar()
+    approved_items = db.query(func.count(FoundItemDB.id)).filter(FoundItemDB.status == "approved").scalar()
+    rejected_items = db.query(func.count(FoundItemDB.id)).filter(FoundItemDB.status == "rejected").scalar()
+    
+    # Import LostItemDB for lost items statistics
+    from app.models.item_model import LostItemDB
+    pending_lost_items = db.query(func.count(LostItemDB.id)).filter(LostItemDB.status == "pending").scalar()
+    total_lost_items = db.query(func.count(LostItemDB.id)).scalar()
+    approved_lost_items = db.query(func.count(LostItemDB.id)).filter(LostItemDB.status == "approved").scalar()
+    
+    return {
+        "status": "success",
+        "admin": {
+            "id": db_user.id,
+            "name": db_user.name,
+            "email": db_user.email
+        },
+        "statistics": {
+            "pending_items": pending_items or 0,
+            "total_items": total_items or 0,
+            "approved_items": approved_items or 0,
+            "rejected_items": rejected_items or 0,
+            "pending_lost_items": pending_lost_items or 0,
+            "total_lost_items": total_lost_items or 0,
+            "approved_lost_items": approved_lost_items or 0
+        }
+    }
+
+
+@router.post("/items/found", status_code=status.HTTP_201_CREATED)
+async def add_found_item(
+    authorization: Annotated[str | None, Header()] = None,
+    description: str = Form(...),
+    location: str = Form(...),
+    date_found: str = Form(...),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    """
+    Admin endpoint to add found items directly
+    Items added by admin are automatically approved
+    
+    Headers:
+        authorization: "Bearer <token>"
+    
+    Form Data:
+        description: Item description
+        location: Location where item was found
+        date_found: Date and time when item was found (ISO format)
+        file: Image file of the item
+    
+    Returns:
+        Created item data
+        
+    Raises:
+        HTTPException: If token invalid, user not admin, or validation fails
+    """
+    
+    print(f"DEBUG: Authorization header received: {authorization}")
+    
+    if not authorization:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authorization header is missing"
+        )
+    
+    # Extract and verify token
+    token = extract_token_from_header(authorization)
     if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -206,27 +307,77 @@ def admin_dashboard(
             detail="Access denied. Admin privileges required."
         )
     
-    # Import FoundItemDB here to avoid circular imports
+    # Validate file type
+    allowed_types = ["image/jpeg", "image/png", "image/gif", "image/webp"]
+    if file.content_type not in allowed_types:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only JPG, PNG, GIF, and WebP images are allowed"
+        )
+    
+    # Validate file size (5MB max)
+    file_content = await file.read()
+    if len(file_content) > 5 * 1024 * 1024:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File size must not exceed 5MB"
+        )
+    
+    # Reset file pointer
+    await file.seek(0)
+    
+    # Parse date
+    try:
+        parsed_date = datetime.fromisoformat(date_found)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid date format. Use ISO format (YYYY-MM-DDTHH:MM:SS)"
+        )
+    
+    # Import necessary modules for file upload
     from app.models.item_model import FoundItemDB
+    from app.utils.file_upload import upload_image
     
-    # Get statistics
-    pending_items = db.query(func.count(FoundItemDB.id)).filter(FoundItemDB.status == "pending").scalar()
-    total_items = db.query(func.count(FoundItemDB.id)).scalar()
-    approved_items = db.query(func.count(FoundItemDB.id)).filter(FoundItemDB.status == "approved").scalar()
-    
-    return {
-        "status": "success",
-        "admin": {
-            "id": db_user.id,
-            "name": db_user.name,
-            "email": db_user.email
-        },
-        "statistics": {
-            "pending_items": pending_items or 0,
-            "total_items": total_items or 0,
-            "approved_items": approved_items or 0
+    try:
+        # Upload image and get URL
+        image_url = await upload_image(file)
+        
+        # Create item with approved status
+        new_item = FoundItemDB(
+            user_id=db_user.id,  # Use user_id instead of reporter_email
+            description=description,
+            location=location,
+            date_found=parsed_date,
+            image_url=image_url,
+            status="approved"  # Admin items are auto-approved
+        )
+        
+        db.add(new_item)
+        db.commit()
+        db.refresh(new_item)
+        
+        return {
+            "status": "success",
+            "message": "Found item added successfully",
+            "item": {
+                "id": new_item.id,
+                "user_id": new_item.user_id,
+                "description": new_item.description,
+                "location": new_item.location,
+                "date_found": new_item.date_found.isoformat() if new_item.date_found else None,
+                "image_url": new_item.image_url,
+                "status": new_item.status,
+                "created_at": new_item.created_at.isoformat() if new_item.created_at else None
+            }
         }
-    }
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to add item: {str(e)}"
+        )
 
 
 @router.get("/items/pending")
@@ -298,9 +449,243 @@ def get_pending_items(
                 "date_found": item.date_found.isoformat() if item.date_found else None,
                 "image_url": item.image_url,
                 "status": item.status,
-                "created_at": item.created_at.isoformat() if item.created_at else None
+                "created_at": item.created_at.isoformat() if item.created_at else None,
+                "category": getattr(item, 'category', None),
+                "reporter_email": getattr(item, 'reporter_email', None)
             }
             for item in pending_items
+        ]
+    }
+
+
+@router.get("/items/approved")
+def get_approved_items(
+    authorization: Annotated[str | None, Header()] = None,
+    db: Session = Depends(get_db),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=50)
+):
+    """
+    Get approved items
+    
+    Headers:
+        authorization: "Bearer <token>"
+    
+    Query Parameters:
+        skip: Number of items to skip (pagination)
+        limit: Number of items to return
+    
+    Returns:
+        List of approved found items
+        
+    Raises:
+        HTTPException: If token invalid or user not admin
+    """
+    
+    if not authorization:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authorization header is missing"
+        )
+    
+    # Extract and verify token
+    token = extract_token_from_header(authorization)
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authorization header format"
+        )
+    
+    user_data = get_user_from_token(token)
+    if not user_data:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token"
+        )
+    
+    # Get user and verify admin
+    db_user = get_user_by_email(db, user_data.get("email"))
+    if not db_user or db_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. Admin privileges required."
+        )
+    
+    # Get approved items
+    from app.models.item_model import FoundItemDB
+    approved_items = db.query(FoundItemDB).filter(
+        FoundItemDB.status == "approved"
+    ).offset(skip).limit(limit).all()
+    
+    return {
+        "status": "success",
+        "items": [
+            {
+                "id": item.id,
+                "description": item.description,
+                "location": item.location,
+                "date_found": item.date_found.isoformat() if item.date_found else None,
+                "image_url": item.image_url,
+                "status": item.status,
+                "created_at": item.created_at.isoformat() if item.created_at else None,
+                "category": getattr(item, 'category', None),
+                "reporter_email": getattr(item, 'reporter_email', None)
+            }
+            for item in approved_items
+        ]
+    }
+
+
+@router.get("/items/rejected")
+def get_rejected_items(
+    authorization: Annotated[str | None, Header()] = None,
+    db: Session = Depends(get_db),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=50)
+):
+    """
+    Get rejected items
+    
+    Headers:
+        authorization: "Bearer <token>"
+    
+    Query Parameters:
+        skip: Number of items to skip (pagination)
+        limit: Number of items to return
+    
+    Returns:
+        List of rejected found items
+        
+    Raises:
+        HTTPException: If token invalid or user not admin
+    """
+    
+    if not authorization:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authorization header is missing"
+        )
+    
+    # Extract and verify token
+    token = extract_token_from_header(authorization)
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authorization header format"
+        )
+    
+    user_data = get_user_from_token(token)
+    if not user_data:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token"
+        )
+    
+    # Get user and verify admin
+    db_user = get_user_by_email(db, user_data.get("email"))
+    if not db_user or db_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. Admin privileges required."
+        )
+    
+    # Get rejected items
+    from app.models.item_model import FoundItemDB
+    rejected_items = db.query(FoundItemDB).filter(
+        FoundItemDB.status == "rejected"
+    ).offset(skip).limit(limit).all()
+    
+    return {
+        "status": "success",
+        "items": [
+            {
+                "id": item.id,
+                "description": item.description,
+                "location": item.location,
+                "date_found": item.date_found.isoformat() if item.date_found else None,
+                "image_url": item.image_url,
+                "status": item.status,
+                "created_at": item.created_at.isoformat() if item.created_at else None,
+                "category": getattr(item, 'category', None),
+                "reporter_email": getattr(item, 'reporter_email', None)
+            }
+            for item in rejected_items
+        ]
+    }
+
+
+@router.get("/items/all")
+def get_all_items(
+    authorization: Annotated[str | None, Header()] = None,
+    db: Session = Depends(get_db),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=50)
+):
+    """
+    Get all items regardless of status
+    
+    Headers:
+        authorization: "Bearer <token>"
+    
+    Query Parameters:
+        skip: Number of items to skip (pagination)
+        limit: Number of items to return
+    
+    Returns:
+        List of all found items
+        
+    Raises:
+        HTTPException: If token invalid or user not admin
+    """
+    
+    if not authorization:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authorization header is missing"
+        )
+    
+    # Extract and verify token
+    token = extract_token_from_header(authorization)
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authorization header format"
+        )
+    
+    user_data = get_user_from_token(token)
+    if not user_data:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token"
+        )
+    
+    # Get user and verify admin
+    db_user = get_user_by_email(db, user_data.get("email"))
+    if not db_user or db_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. Admin privileges required."
+        )
+    
+    # Get all items
+    from app.models.item_model import FoundItemDB
+    all_items = db.query(FoundItemDB).offset(skip).limit(limit).all()
+    
+    return {
+        "status": "success",
+        "items": [
+            {
+                "id": item.id,
+                "description": item.description,
+                "location": item.location,
+                "date_found": item.date_found.isoformat() if item.date_found else None,
+                "image_url": item.image_url,
+                "status": item.status,
+                "created_at": item.created_at.isoformat() if item.created_at else None,
+                "category": getattr(item, 'category', None),
+                "reporter_email": getattr(item, 'reporter_email', None)
+            }
+            for item in all_items
         ]
     }
 
@@ -376,156 +761,6 @@ def approve_item(
     }
 
 
-@router.get("/items/approved")
-def get_approved_items(
-    authorization: Annotated[str | None, Header()] = None,
-    db: Session = Depends(get_db),
-    skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=100)
-):
-    """
-    Get all approved items
-    
-    Headers:
-        authorization: "Bearer <token>"
-    
-    Query Parameters:
-        skip: Number of items to skip (pagination)
-        limit: Number of items to return
-    
-    Returns:
-        List of approved items
-        
-    Raises:
-        HTTPException: If token invalid or user not admin
-    """
-    
-    if not authorization:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authorization header is missing"
-        )
-    
-    # Extract and verify token
-    token = extract_token_from_header(authorization)
-    if not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authorization header format"
-        )
-    
-    user_data = get_user_from_token(token)
-    if not user_data:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token"
-        )
-    
-    # Get user and verify admin
-    db_user = get_user_by_email(db, user_data.get("email"))
-    if not db_user or db_user.role != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied. Admin privileges required."
-        )
-    
-    # Get approved items
-    from app.models.item_model import FoundItemDB
-    approved_items = db.query(FoundItemDB).filter(
-        FoundItemDB.status == "approved"
-    ).offset(skip).limit(limit).all()
-    
-    return {
-        "status": "success",
-        "items": [
-            {
-                "id": item.id,
-                "description": item.description,
-                "location": item.location,
-                "date_found": item.date_found.isoformat() if item.date_found else None,
-                "image_url": item.image_url,
-                "status": item.status,
-                "created_at": item.created_at.isoformat() if item.created_at else None
-            }
-            for item in approved_items
-        ]
-    }
-
-
-@router.get("/items/all")
-def get_all_items(
-    authorization: Annotated[str | None, Header()] = None,
-    db: Session = Depends(get_db),
-    skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=100)
-):
-    """
-    Get all items (pending, approved, rejected)
-    
-    Headers:
-        authorization: "Bearer <token>"
-    
-    Query Parameters:
-        skip: Number of items to skip (pagination)
-        limit: Number of items to return
-    
-    Returns:
-        List of all items
-        
-    Raises:
-        HTTPException: If token invalid or user not admin
-    """
-    
-    if not authorization:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authorization header is missing"
-        )
-    
-    # Extract and verify token
-    token = extract_token_from_header(authorization)
-    if not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authorization header format"
-        )
-    
-    user_data = get_user_from_token(token)
-    if not user_data:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token"
-        )
-    
-    # Get user and verify admin
-    db_user = get_user_by_email(db, user_data.get("email"))
-    if not db_user or db_user.role != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied. Admin privileges required."
-        )
-    
-    # Get all items
-    from app.models.item_model import FoundItemDB
-    all_items = db.query(FoundItemDB).offset(skip).limit(limit).all()
-    
-    return {
-        "status": "success",
-        "items": [
-            {
-                "id": item.id,
-                "description": item.description,
-                "location": item.location,
-                "date_found": item.date_found.isoformat() if item.date_found else None,
-                "image_url": item.image_url,
-                "status": item.status,
-                "created_at": item.created_at.isoformat() if item.created_at else None
-            }
-            for item in all_items
-        ]
-    }
-
-
 @router.post("/items/{item_id}/reject")
 def reject_item(
     item_id: int,
@@ -593,4 +828,224 @@ def reject_item(
     return {
         "status": "success",
         "message": "Item rejected successfully"
+    }
+
+
+# ==================== LOST ITEMS ADMIN ENDPOINTS ====================
+
+@router.get("/lost-items/pending")
+def get_pending_lost_items(
+    authorization: Annotated[str | None, Header()] = None,
+    db: Session = Depends(get_db),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=50)
+):
+    """
+    Get pending lost items for admin review
+    
+    Headers:
+        authorization: "Bearer <token>"
+    
+    Query Parameters:
+        skip: Number of items to skip (pagination)
+        limit: Number of items to return
+    
+    Returns:
+        List of pending lost items
+        
+    Raises:
+        HTTPException: If token invalid or user not admin
+    """
+    
+    if not authorization:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authorization header is missing"
+        )
+    
+    # Extract and verify token
+    token = extract_token_from_header(authorization)
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authorization header format"
+        )
+    
+    user_data = get_user_from_token(token)
+    if not user_data:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token"
+        )
+    
+    # Get user and verify admin
+    db_user = get_user_by_email(db, user_data.get("email"))
+    if not db_user or db_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. Admin privileges required."
+        )
+    
+    # Get pending lost items
+    from app.models.item_model import LostItemDB
+    pending_items = db.query(LostItemDB).filter(
+        LostItemDB.status == "pending"
+    ).offset(skip).limit(limit).all()
+    
+    return {
+        "status": "success",
+        "items": [
+            {
+                "id": item.id,
+                "description": item.description,
+                "location": item.location,
+                "date_lost": item.date_lost.isoformat() if item.date_lost else None,
+                "image_url": item.image_url,
+                "status": item.status,
+                "created_at": item.created_at.isoformat() if item.created_at else None,
+                "user_id": item.user_id
+            }
+            for item in pending_items
+        ]
+    }
+
+
+@router.post("/lost-items/{item_id}/approve")
+def approve_lost_item(
+    item_id: int,
+    authorization: Annotated[str | None, Header()] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Approve a lost item
+    
+    Path Parameters:
+        item_id: ID of lost item to approve
+    
+    Headers:
+        authorization: "Bearer <token>"
+    
+    Returns:
+        Success message
+        
+    Raises:
+        HTTPException: If item not found, token invalid, or user not admin
+    """
+    
+    if not authorization:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authorization header is missing"
+        )
+    
+    # Extract and verify token
+    token = extract_token_from_header(authorization)
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authorization header format"
+        )
+    
+    user_data = get_user_from_token(token)
+    if not user_data:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token"
+        )
+    
+    # Get user and verify admin
+    db_user = get_user_by_email(db, user_data.get("email"))
+    if not db_user or db_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. Admin privileges required."
+        )
+    
+    # Get item
+    from app.models.item_model import LostItemDB
+    db_item = db.query(LostItemDB).filter(LostItemDB.id == item_id).first()
+    if not db_item:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Lost item not found"
+        )
+    
+    # Update item status
+    db_item.status = "approved"
+    db.commit()
+    db.refresh(db_item)
+    
+    return {
+        "status": "success",
+        "message": "Lost item approved successfully"
+    }
+
+
+@router.post("/lost-items/{item_id}/reject")
+def reject_lost_item(
+    item_id: int,
+    authorization: Annotated[str | None, Header()] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Reject a lost item
+    
+    Path Parameters:
+        item_id: ID of lost item to reject
+    
+    Headers:
+        authorization: "Bearer <token>"
+    
+    Returns:
+        Success message
+        
+    Raises:
+        HTTPException: If item not found, token invalid, or user not admin
+    """
+    
+    if not authorization:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authorization header is missing"
+        )
+    
+    # Extract and verify token
+    token = extract_token_from_header(authorization)
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authorization header format"
+        )
+    
+    user_data = get_user_from_token(token)
+    if not user_data:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token"
+        )
+    
+    # Get user and verify admin
+    db_user = get_user_by_email(db, user_data.get("email"))
+    if not db_user or db_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. Admin privileges required."
+        )
+    
+    # Get item
+    from app.models.item_model import LostItemDB
+    db_item = db.query(LostItemDB).filter(LostItemDB.id == item_id).first()
+    if not db_item:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Lost item not found"
+        )
+    
+    # Update status to rejected
+    db_item.status = "rejected"
+    db.commit()
+    
+    return {
+        "status": "success",
+        "message": "Lost item rejected successfully"
     }

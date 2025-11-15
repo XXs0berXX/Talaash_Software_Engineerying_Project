@@ -1,6 +1,6 @@
 """
-Script to check admin users in the database
-Run this in your backend directory: python check_admin.py
+Script to list all users in the database
+Run: python list_users.py
 """
 
 from sqlalchemy import create_engine, text
@@ -15,7 +15,7 @@ load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./database/talash.db")
 
 print("\n" + "="*80)
-print("CHECKING DATABASE:", DATABASE_URL)
+print("DATABASE:", DATABASE_URL)
 print("="*80)
 
 # Create engine and session
@@ -39,16 +39,15 @@ try:
         for user in users:
             user_id, name, email, role = user
             admin_badge = " ⭐ ADMIN" if role == "admin" else ""
-            print(f"\n{'='*80}")
-            print(f"ID: {user_id}")
+            print(f"\nID: {user_id}")
             print(f"Name: {name}")
             print(f"Email: {email}")
             print(f"Role: {role}{admin_badge}")
-        
-        print(f"\n{'='*80}")
+            print("-" * 80)
     
     # Count admins
-    admin_count = db.execute(text("SELECT COUNT(*) FROM users WHERE role = 'admin'")).scalar()
+    admin_result = db.execute(text("SELECT COUNT(*) FROM users WHERE role = 'admin'"))
+    admin_count = admin_result.scalar()
     total_count = len(users)
     
     print(f"\n📊 STATISTICS:")
@@ -59,6 +58,8 @@ try:
     if admin_count == 0:
         print("\n⚠️  WARNING: No admin users found!")
         print("   Run: python create_admin.py")
+    else:
+        print(f"\n✅ Found {admin_count} admin user(s)")
     
     print("="*80 + "\n")
     

@@ -163,7 +163,7 @@ function ReportLostContent() {
         // Redirect after 3 seconds
         setTimeout(() => {
           router.push('/dashboard');
-        }, 5000);
+        }, 3000);
       }
     } catch (err) {
       console.error('Upload failed:', err);

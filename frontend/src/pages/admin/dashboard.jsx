@@ -1,11 +1,10 @@
 /**
- * Admin Dashboard Page
- * Admin control panel for managing found items with tabs including rejected items
+ * Admin Dashboard Page - WITH LOST ITEMS SUPPORT
+ * Shows pending lost items that need approval
  */
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
-import Navbar from '../../components/Navbar';
 import AuthGuard from '../../components/AuthGuard';
 import { auth } from '../../lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -17,7 +16,7 @@ function AdminDashboardContent() {
   const [stats, setStats] = useState(null);
   const [token, setToken] = useState('');
   const [error, setError] = useState('');
-  const [activeTab, setActiveTab] = useState('pending'); // 'pending', 'approved', 'rejected', 'all'
+  const [activeTab, setActiveTab] = useState('pending-lost'); // Show lost items by default
   const router = useRouter();
 
   useEffect(() => {
@@ -42,7 +41,6 @@ function AdminDashboardContent() {
     try {
       setLoading(true);
 
-      // Fetch statistics
       const dashResponse = await axios.get(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/admin/dashboard`,
         {
@@ -53,10 +51,7 @@ function AdminDashboardContent() {
       );
 
       setStats(dashResponse.data.statistics);
-
-      // Fetch pending items initially
-      await fetchItems('pending', authToken);
-      
+      await fetchItems('pending-lost', authToken);
       setError('');
     } catch (err) {
       console.error('Failed to fetch dashboard data:', err);
@@ -66,14 +61,33 @@ function AdminDashboardContent() {
     }
   };
 
+  const refreshStats = async () => {
+    try {
+      const dashResponse = await axios.get(
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/admin/dashboard`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        }
+      );
+      setStats(dashResponse.data.statistics);
+    } catch (err) {
+      console.error('Failed to refresh stats:', err);
+    }
+  };
+
   const fetchItems = async (status, authToken = token) => {
     try {
       setLoading(true);
       
       let endpoint = '';
-      if (status === 'pending') {
-        endpoint = '/api/admin/items/pending';
-      } else if (status === 'approved') {
+      // LOST ITEMS
+      if (status === 'pending-lost') {
+        endpoint = '/api/admin/lost-items/pending';
+      } 
+      // FOUND ITEMS
+      else if (status === 'approved') {
         endpoint = '/api/admin/items/approved';
       } else if (status === 'rejected') {
         endpoint = '/api/admin/items/rejected';
@@ -103,10 +117,11 @@ function AdminDashboardContent() {
     }
   };
 
-  const handleApprove = async (itemId) => {
+  // LOST ITEMS APPROVAL
+  const handleApproveLost = async (itemId) => {
     try {
       const response = await axios.post(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/admin/items/${itemId}/approve`,
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/admin/lost-items/${itemId}/approve`,
         {},
         {
           headers: {
@@ -116,25 +131,22 @@ function AdminDashboardContent() {
       );
 
       if (response.data.status === 'success') {
-        // Remove from list
         setItems((prev) => prev.filter((item) => item.id !== itemId));
-        // Refresh stats
-        await fetchDashboardData(token);
+        await refreshStats();
+        alert('Lost item approved!');
       }
     } catch (err) {
-      console.error('Failed to approve item:', err);
-      alert('Failed to approve item');
+      console.error('Failed to approve lost item:', err);
+      alert('Failed to approve lost item');
     }
   };
 
-  const handleReject = async (itemId) => {
-    if (!confirm('Are you sure you want to reject this item?')) {
-      return;
-    }
+  const handleRejectLost = async (itemId) => {
+    if (!confirm('Reject this lost item request?')) return;
 
     try {
       const response = await axios.post(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/admin/items/${itemId}/reject`,
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/admin/lost-items/${itemId}/reject`,
         {},
         {
           headers: {
@@ -144,14 +156,12 @@ function AdminDashboardContent() {
       );
 
       if (response.data.status === 'success') {
-        // Remove from list
         setItems((prev) => prev.filter((item) => item.id !== itemId));
-        // Refresh stats
-        await fetchDashboardData(token);
+        await refreshStats();
       }
     } catch (err) {
-      console.error('Failed to reject item:', err);
-      alert('Failed to reject item');
+      console.error('Failed to reject lost item:', err);
+      alert('Failed to reject lost item');
     }
   };
 
@@ -168,115 +178,90 @@ function AdminDashboardContent() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-
       <div className="container mx-auto px-4 py-12 max-w-7xl">
-        <h1 className="text-4xl font-bold mb-8">Admin Dashboard</h1>
+        <div className="flex justify-between items-center mb-8">
+          <h1 className="text-4xl font-bold">Admin Dashboard</h1>
+          <button
+            onClick={() => router.push('/admin/add-found-item')}
+            className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 font-semibold"
+          >
+            + Add Found Item
+          </button>
+        </div>
 
-        {/* Statistics Section */}
+        {/* Statistics */}
         {stats && (
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-12">
-            <div className="bg-white rounded-lg shadow p-6 text-center">
+            <div className="bg-white rounded-lg shadow p-6 text-center border-l-4 border-yellow-500">
               <h3 className="text-3xl font-bold text-yellow-600">
-                {stats.pending_items}
+                {stats.pending_lost_items || 0}
               </h3>
-              <p className="text-gray-600 mt-2">Pending Items</p>
+              <p className="text-gray-600 mt-2">Pending Lost Items</p>
             </div>
-            <div className="bg-white rounded-lg shadow p-6 text-center">
+            <div className="bg-white rounded-lg shadow p-6 text-center border-l-4 border-green-500">
               <h3 className="text-3xl font-bold text-green-600">
-                {stats.approved_items}
+                {stats.approved_lost_items || 0}
               </h3>
-              <p className="text-gray-600 mt-2">Approved Items</p>
+              <p className="text-gray-600 mt-2">Approved Lost Items</p>
             </div>
-            <div className="bg-white rounded-lg shadow p-6 text-center">
-              <h3 className="text-3xl font-bold text-red-600">
-                {stats.rejected_items || 0}
-              </h3>
-              <p className="text-gray-600 mt-2">Rejected Items</p>
-            </div>
-            <div className="bg-white rounded-lg shadow p-6 text-center">
+            <div className="bg-white rounded-lg shadow p-6 text-center border-l-4 border-blue-500">
               <h3 className="text-3xl font-bold text-blue-600">
-                {stats.total_items}
+                {stats.approved_items || 0}
+              </h3>
+              <p className="text-gray-600 mt-2">Found Items</p>
+            </div>
+            <div className="bg-white rounded-lg shadow p-6 text-center border-l-4 border-purple-500">
+              <h3 className="text-3xl font-bold text-purple-600">
+                {(stats.total_items || 0) + (stats.total_lost_items || 0)}
               </h3>
               <p className="text-gray-600 mt-2">Total Items</p>
             </div>
           </div>
         )}
 
-        {/* Tabs Section */}
+        {/* Tabs */}
         <div className="bg-white rounded-lg shadow">
-          {/* Tab Headers */}
           <div className="border-b border-gray-200">
-            <div className="flex space-x-8 px-6">
+            <div className="flex space-x-4 px-6">
               <button
-                onClick={() => setActiveTab('pending')}
-                className={`py-4 px-2 border-b-2 font-semibold text-sm transition-colors ${
-                  activeTab === 'pending'
+                onClick={() => setActiveTab('pending-lost')}
+                className={`py-4 px-4 border-b-2 font-semibold text-sm ${
+                  activeTab === 'pending-lost'
                     ? 'border-yellow-600 text-yellow-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                    : 'border-transparent text-gray-500'
                 }`}
               >
-                Pending ({stats?.pending_items || 0})
+                ⏳ Pending Lost ({stats?.pending_lost_items || 0})
               </button>
               <button
                 onClick={() => setActiveTab('approved')}
-                className={`py-4 px-2 border-b-2 font-semibold text-sm transition-colors ${
+                className={`py-4 px-4 border-b-2 font-semibold text-sm ${
                   activeTab === 'approved'
                     ? 'border-green-600 text-green-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                    : 'border-transparent text-gray-500'
                 }`}
               >
-                Approved ({stats?.approved_items || 0})
-              </button>
-              <button
-                onClick={() => setActiveTab('rejected')}
-                className={`py-4 px-2 border-b-2 font-semibold text-sm transition-colors ${
-                  activeTab === 'rejected'
-                    ? 'border-red-600 text-red-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                Rejected ({stats?.rejected_items || 0})
-              </button>
-              <button
-                onClick={() => setActiveTab('all')}
-                className={`py-4 px-2 border-b-2 font-semibold text-sm transition-colors ${
-                  activeTab === 'all'
-                    ? 'border-purple-600 text-purple-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                All Items ({stats?.total_items || 0})
+                ✅ Found Items ({stats?.approved_items || 0})
               </button>
             </div>
           </div>
 
-          {/* Tab Content */}
+          {/* Content */}
           <div className="p-6">
             {loading ? (
-              <div className="flex justify-center items-center py-12">
+              <div className="flex justify-center py-12">
                 <div className="animate-spin rounded-full h-8 w-8 border-4 border-blue-600 border-t-transparent"></div>
-              </div>
-            ) : error ? (
-              <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-lg text-center">
-                {error}
               </div>
             ) : items.length === 0 ? (
               <div className="bg-gray-100 p-8 rounded-lg text-center">
                 <p className="text-gray-600">
-                  {activeTab === 'pending' && 'No pending items'}
-                  {activeTab === 'approved' && 'No approved items'}
-                  {activeTab === 'rejected' && 'No rejected items'}
-                  {activeTab === 'all' && 'No items found'}
+                  {activeTab === 'pending-lost' ? '🎉 No pending lost items!' : 'No items'}
                 </p>
               </div>
             ) : (
               <div className="space-y-4">
                 {items.map((item) => (
-                  <div
-                    key={item.id}
-                    className="border border-gray-200 rounded-lg p-4 flex gap-4 hover:shadow-md transition-shadow"
-                  >
-                    {/* Item Image */}
+                  <div key={item.id} className="border rounded-lg p-4 flex gap-4">
                     {item.image_url && (
                       <img
                         src={`${process.env.NEXT_PUBLIC_BACKEND_URL}${item.image_url}`}
@@ -285,44 +270,25 @@ function AdminDashboardContent() {
                       />
                     )}
 
-                    {/* Item Details */}
                     <div className="flex-1">
-                      <div className="flex items-start justify-between mb-2">
-                        <h3 className="font-bold text-lg">
-                          {item.description}
-                        </h3>
-                        {getStatusBadge(item.status)}
-                      </div>
-                      <p className="text-sm text-gray-600 mb-1">
-                        📍 {item.location}
-                      </p>
+                      <h3 className="font-bold text-lg">{item.description}</h3>
+                      <p className="text-sm text-gray-600">📍 {item.location}</p>
                       <p className="text-sm text-gray-600">
-                        📅 {new Date(item.date_found || item.created_at).toLocaleDateString()}
+                        📅 {new Date(item.date_lost || item.created_at).toLocaleDateString()}
                       </p>
-                      {item.category && (
-                        <p className="text-sm text-gray-600 mt-1">
-                          🏷️ {item.category}
-                        </p>
-                      )}
-                      {item.reporter_email && (
-                        <p className="text-sm text-gray-600 mt-1">
-                          👤 {item.reporter_email}
-                        </p>
-                      )}
                     </div>
 
-                    {/* Actions - Only show for pending items */}
-                    {item.status === 'pending' && (
+                    {activeTab === 'pending-lost' && (
                       <div className="flex gap-2 items-center">
                         <button
-                          onClick={() => handleApprove(item.id)}
-                          className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 transition-colors"
+                          onClick={() => handleApproveLost(item.id)}
+                          className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
                         >
                           Approve
                         </button>
                         <button
-                          onClick={() => handleReject(item.id)}
-                          className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 transition-colors"
+                          onClick={() => handleRejectLost(item.id)}
+                          className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700"
                         >
                           Reject
                         </button>
