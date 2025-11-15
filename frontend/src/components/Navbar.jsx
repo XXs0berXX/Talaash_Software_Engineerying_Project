@@ -110,11 +110,6 @@ export default function Navbar() {
 
           {user ? (
             <>
-              {/* User Links */}
-              <Link href="/upload-found">
-                <span className="hover:opacity-80 cursor-pointer">Report Found</span>
-              </Link>
-
               {/* Admin Links */}
               {isAdmin && (
                 <Link href="/admin/dashboard">

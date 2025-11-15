@@ -1,6 +1,6 @@
 /**
  * Dashboard Page - For Authenticated Users
- * Full-featured dashboard showing only approved items
+ * Separate sections for user's reports and browsable items
  */
 
 import React, { useState, useEffect } from 'react';
@@ -9,45 +9,102 @@ import axios from 'axios';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import AuthGuard from '../components/AuthGuard';
+import { auth } from '../lib/firebase';
 
 function DashboardContent() {
-  const [items, setItems] = useState([]);
-  const [loadingItems, setLoadingItems] = useState(true);
+  const [browseItems, setBrowseItems] = useState([]);
+  const [myFoundItems, setMyFoundItems] = useState([]);
+  const [myLostItems, setMyLostItems] = useState([]);
+  const [loadingBrowse, setLoadingBrowse] = useState(true);
+  const [loadingMyItems, setLoadingMyItems] = useState(true);
   const [error, setError] = useState(null);
+  const [activeTab, setActiveTab] = useState('browse'); // 'browse' or 'my-reports'
   const router = useRouter();
 
   useEffect(() => {
-    fetchItems();
+    fetchBrowseItems();
+    fetchMyReports();
   }, []);
 
-  const fetchItems = async () => {
+  const fetchBrowseItems = async () => {
     try {
-      setLoadingItems(true);
+      setLoadingBrowse(true);
       const response = await axios.get(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/found`,
         {
           params: {
-            status_filter: 'approved', // Only show approved items
+            status_filter: 'approved',
             limit: 12,
           },
         }
       );
       
-      console.log('Dashboard - Received response:', response.data);
-      
-      // Handle different response formats
       const itemsData = response.data.items || response.data || [];
-      console.log('Dashboard - Items to display:', itemsData);
       
-      setItems(itemsData);
+      // Filter out items reported by current user
+      const user = auth.currentUser;
+      if (user) {
+        const filteredItems = itemsData.filter(item => item.reporter_id !== user.uid);
+        setBrowseItems(filteredItems);
+      } else {
+        setBrowseItems(itemsData);
+      }
+      
       setError(null);
     } catch (err) {
-      console.error('Failed to fetch items:', err);
-      console.error('Error details:', err.response?.data);
+      console.error('Failed to fetch browse items:', err);
       setError('Failed to load items');
     } finally {
-      setLoadingItems(false);
+      setLoadingBrowse(false);
     }
+  };
+
+  const fetchMyReports = async () => {
+    try {
+      setLoadingMyItems(true);
+      const user = auth.currentUser;
+      if (!user) return;
+
+      const token = await user.getIdToken();
+
+      // Fetch found items
+      const foundResponse = await axios.get(
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/found/my-items`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        }
+      );
+
+      // Fetch lost items
+      const lostResponse = await axios.get(
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/lost/my-items`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        }
+      );
+
+      setMyFoundItems(foundResponse.data.items || []);
+      setMyLostItems(lostResponse.data.items || []);
+    } catch (err) {
+      console.error('Failed to fetch my reports:', err);
+    } finally {
+      setLoadingMyItems(false);
+    }
+  };
+
+  const getStatusBadge = (status) => {
+    if (status === 'pending') {
+      return <span className="bg-yellow-100 text-yellow-800 px-3 py-1 rounded-full text-sm font-semibold">⏳ Pending</span>;
+    } else if (status === 'approved') {
+      return <span className="bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm font-semibold">✅ Approved</span>;
+    } else if (status === 'rejected') {
+      return <span className="bg-red-100 text-red-800 px-3 py-1 rounded-full text-sm font-semibold">❌ Rejected</span>;
+    }
+    return null;
   };
 
   return (
@@ -59,12 +116,12 @@ function DashboardContent() {
           <p className="text-lg mb-8">Welcome back! What would you like to do today?</p>
 
           {/* Quick Action Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <Link href="/search">
               <div className="bg-white bg-opacity-10 backdrop-blur-sm p-6 rounded-lg hover:bg-opacity-20 transition-all cursor-pointer border border-white border-opacity-20">
                 <div className="text-3xl mb-2">🔍</div>
                 <h3 className="text-xl font-bold mb-1">Search Items</h3>
-                <p className="text-sm opacity-90">Find your lost belongings</p>
+                <p className="text-sm opacity-90">Looking for something you lost?</p>
               </div>
             </Link>
 
@@ -72,7 +129,7 @@ function DashboardContent() {
               <div className="bg-white bg-opacity-10 backdrop-blur-sm p-6 rounded-lg hover:bg-opacity-20 transition-all cursor-pointer border border-white border-opacity-20">
                 <div className="text-3xl mb-2">😢</div>
                 <h3 className="text-xl font-bold mb-1">Report Lost</h3>
-                <p className="text-sm opacity-90">Report a lost item</p>
+                <p className="text-sm opacity-90">Did you lose something?</p>
               </div>
             </Link>
 
@@ -80,81 +137,194 @@ function DashboardContent() {
               <div className="bg-white bg-opacity-10 backdrop-blur-sm p-6 rounded-lg hover:bg-opacity-20 transition-all cursor-pointer border border-white border-opacity-20">
                 <div className="text-3xl mb-2">✨</div>
                 <h3 className="text-xl font-bold mb-1">Report Found</h3>
-                <p className="text-sm opacity-90">Help someone find their item</p>
-              </div>
-            </Link>
-
-            <Link href="/my-reports">
-              <div className="bg-white bg-opacity-10 backdrop-blur-sm p-6 rounded-lg hover:bg-opacity-20 transition-all cursor-pointer border border-white border-opacity-20">
-                <div className="text-3xl mb-2">📋</div>
-                <h3 className="text-xl font-bold mb-1">My Reports</h3>
-                <p className="text-sm opacity-90">View your submissions</p>
+                <p className="text-sm opacity-90">Did you find something?</p>
               </div>
             </Link>
           </div>
         </div>
       </div>
 
-      {/* Statistics Section */}
+      {/* How It Works Section */}
       <div className="bg-white py-12 border-b">
         <div className="container-custom">
-          <div className="grid grid-cols-3 gap-8 text-center">
-            <div>
-              <h3 className="text-3xl font-bold text-primary">
-                {items.length}+
-              </h3>
-              <p className="text-gray-600 mt-2">Items Found</p>
+          <h2 className="text-2xl font-bold text-center mb-8">How It Works</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div className="text-center">
+              <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <span className="text-3xl">1️⃣</span>
+              </div>
+              <h3 className="text-lg font-bold mb-2">Report or Search</h3>
+              <p className="text-gray-600 text-sm">
+                Lost something? Search our database. Found something? Report it to help others.
+              </p>
             </div>
-            <div>
-              <h3 className="text-3xl font-bold text-primary">100+</h3>
-              <p className="text-gray-600 mt-2">Items Returned</p>
+            <div className="text-center">
+              <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <span className="text-3xl">2️⃣</span>
+              </div>
+              <h3 className="text-lg font-bold mb-2">Admin Review</h3>
+              <p className="text-gray-600 text-sm">
+                Our team reviews submissions to ensure accuracy and prevent misuse.
+              </p>
             </div>
-            <div>
-              <h3 className="text-3xl font-bold text-primary">50+</h3>
-              <p className="text-gray-600 mt-2">Happy Users</p>
+            <div className="text-center">
+              <div className="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <span className="text-3xl">3️⃣</span>
+              </div>
+              <h3 className="text-lg font-bold mb-2">Get Reunited</h3>
+              <p className="text-gray-600 text-sm">
+                Once approved, items are visible to help reunite them with their owners.
+              </p>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Recently Found Items */}
-      <div className="container-custom py-16">
-        <div className="flex justify-between items-center mb-8">
-          <h2 className="text-3xl font-bold">Recently Found Items</h2>
-          <Link href="/search">
-            <button className="text-primary hover:underline font-semibold">
-              View All →
-            </button>
-          </Link>
+      {/* Tabs Section */}
+      <div className="container-custom py-8">
+        <div className="flex gap-4 mb-6">
+          <button
+            onClick={() => setActiveTab('browse')}
+            className={`px-6 py-3 rounded-lg font-semibold transition-all ${
+              activeTab === 'browse'
+                ? 'bg-primary text-white shadow-lg'
+                : 'bg-white text-gray-700 hover:bg-gray-100'
+            }`}
+          >
+            Browse Items
+          </button>
+          <button
+            onClick={() => setActiveTab('my-reports')}
+            className={`px-6 py-3 rounded-lg font-semibold transition-all ${
+              activeTab === 'my-reports'
+                ? 'bg-primary text-white shadow-lg'
+                : 'bg-white text-gray-700 hover:bg-gray-100'
+            }`}
+          >
+            My Reports
+          </button>
         </div>
 
-        {loadingItems ? (
-          <div className="flex justify-center items-center py-12">
-            <div className="spinner w-8 h-8 border-4 border-primary border-t-secondary"></div>
+        {/* Browse Items Tab */}
+        {activeTab === 'browse' && (
+          <div>
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-bold">Reported Items</h2>
+              <Link href="/search">
+                <button className="text-primary hover:underline font-semibold">
+                  View All →
+                </button>
+              </Link>
+            </div>
+
+            {loadingBrowse ? (
+              <div className="flex justify-center items-center py-12">
+                <div className="animate-spin rounded-full h-8 w-8 border-4 border-primary border-t-transparent"></div>
+              </div>
+            ) : error ? (
+              <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-lg text-center">
+                {error}
+              </div>
+            ) : browseItems.length === 0 ? (
+              <div className="bg-gray-100 p-8 rounded-lg text-center">
+                <p className="text-gray-600 mb-4">No items available to claim</p>
+                <p className="text-sm text-gray-500">Items reported by other users will appear here</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {browseItems.map((item) => (
+                  <ItemCard 
+                    key={item.id} 
+                    item={item} 
+                    type="found" 
+                    showClaimButton={true} 
+                  />
+                ))}
+              </div>
+            )}
           </div>
-        ) : error ? (
-          <div className="bg-danger bg-opacity-10 text-danger p-4 rounded-lg text-center">
-            {error}
-          </div>
-        ) : items.length === 0 ? (
-          <div className="bg-gray-100 p-8 rounded-lg text-center">
-            <p className="text-gray-600 mb-4">No approved items to display yet</p>
-            <Link href="/report-found">
-              <button className="btn-primary">
-                Be the first to report an item
-              </button>
-            </Link>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {items.map((item) => (
-              <ItemCard 
-                key={item.id} 
-                item={item} 
-                type="found" 
-                showClaimButton={true} 
-              />
-            ))}
+        )}
+
+        {/* My Reports Tab */}
+        {activeTab === 'my-reports' && (
+          <div>
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-bold">My Reported Items</h2>
+              <Link href="/my-reports">
+                <button className="text-primary hover:underline font-semibold">
+                  View All Details →
+                </button>
+              </Link>
+            </div>
+
+            {loadingMyItems ? (
+              <div className="flex justify-center items-center py-12">
+                <div className="animate-spin rounded-full h-8 w-8 border-4 border-primary border-t-transparent"></div>
+              </div>
+            ) : (
+              <>
+                {/* Found Items */}
+                {myFoundItems.length > 0 && (
+                  <div className="mb-8">
+                    <h3 className="text-xl font-semibold mb-4">Found Items ({myFoundItems.length})</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                      {myFoundItems.map((item) => (
+                        <div key={item.id} className="relative">
+                          <ItemCard 
+                            item={item} 
+                            type="found" 
+                            showClaimButton={false}
+                          />
+                          <div className="absolute top-4 right-4">
+                            {getStatusBadge(item.status)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Lost Items */}
+                {myLostItems.length > 0 && (
+                  <div>
+                    <h3 className="text-xl font-semibold mb-4">Lost Items ({myLostItems.length})</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                      {myLostItems.map((item) => (
+                        <div key={item.id} className="relative">
+                          <ItemCard 
+                            item={item} 
+                            type="lost" 
+                            showClaimButton={false}
+                          />
+                          <div className="absolute top-4 right-4">
+                            {getStatusBadge(item.status)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Empty State */}
+                {myFoundItems.length === 0 && myLostItems.length === 0 && (
+                  <div className="bg-gray-100 p-8 rounded-lg text-center">
+                    <p className="text-gray-600 mb-4">You haven't reported any items yet</p>
+                    <div className="flex gap-4 justify-center">
+                      <Link href="/report-found">
+                        <button className="bg-primary text-white px-6 py-2 rounded-lg hover:bg-opacity-90">
+                          Report Found Item
+                        </button>
+                      </Link>
+                      <Link href="/report-lost">
+                        <button className="bg-secondary text-white px-6 py-2 rounded-lg hover:bg-opacity-90">
+                          Report Lost Item
+                        </button>
+                      </Link>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         )}
       </div>
