@@ -111,12 +111,9 @@ export default function Login() {
       return;
     }
 
-    // Fixed validation: Accept both @iba.edu.pk and @khi.iba.edu.pk
-    const isValidIBAEmail = resetEmail.endsWith('@iba.edu.pk') || 
-                           resetEmail.endsWith('@khi.iba.edu.pk');
-    
-    if (!isValidIBAEmail) {
-      setError('Please use your IBA email address (@iba.edu.pk or @khi.iba.edu.pk)');
+    // Only accept @khi.iba.edu.pk
+    if (!resetEmail.endsWith('@khi.iba.edu.pk')) {
+      setError('Please use your IBA Karachi email address (@khi.iba.edu.pk)');
       return;
     }
 

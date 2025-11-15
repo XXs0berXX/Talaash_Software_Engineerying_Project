@@ -4,8 +4,11 @@ Handles admin signup, login, and item moderation
 """
 
 import os
-from fastapi import APIRouter, HTTPException, status, Depends, Query
+from fastapi import APIRouter, HTTPException, status, Depends, Query, Header
+from typing import Annotated
 from sqlalchemy.orm import Session
+from sqlalchemy import func
+from pydantic import BaseModel
 from app.db import get_db
 from app.models.user_model import (
     AdminSignupRequest,
@@ -20,12 +23,6 @@ from app.utils.firebase_verify import (
     get_user_from_token,
     initialize_firebase
 )
-from app.models.item_model import (
-    get_found_items,
-    get_found_item_by_id,
-    FoundItemResponse
-)
-from sqlalchemy.orm import Session
 
 router = APIRouter()
 
@@ -33,6 +30,12 @@ router = APIRouter()
 ADMIN_KEY = os.getenv("ADMIN_KEY", "admin_secret_2024")
 
 initialize_firebase()
+
+
+# Pydantic model for login request
+class AdminLoginRequest(BaseModel):
+    email: str
+    token: str
 
 
 @router.post("/signup", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
@@ -44,7 +47,7 @@ def admin_signup(
     Admin signup endpoint
     
     - Validates admin key
-    - Validates @iba.edu.pk email domain
+    - Validates @khi.iba.edu.pk email domain
     - Creates admin user record
     
     Args:
@@ -69,7 +72,7 @@ def admin_signup(
     if not validate_iba_email(request.email):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only @iba.edu.pk email addresses are allowed"
+            detail="Only @khi.iba.edu.pk email addresses are allowed"
         )
     
     # Check if user already exists
@@ -92,8 +95,7 @@ def admin_signup(
 
 @router.post("/login")
 def admin_login(
-    email: str,
-    token: str,
+    request: AdminLoginRequest,
     db: Session = Depends(get_db)
 ):
     """
@@ -104,8 +106,7 @@ def admin_login(
     - Returns admin dashboard redirect
     
     Args:
-        email: Admin's email
-        token: Firebase ID token from frontend
+        request: Login request with email and Firebase token
         db: Database session
         
     Returns:
@@ -116,14 +117,14 @@ def admin_login(
     """
     
     # Validate email domain
-    if not validate_iba_email(email):
+    if not validate_iba_email(request.email):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid email domain"
         )
     
     # Verify Firebase token
-    user_data = get_user_from_token(token)
+    user_data = get_user_from_token(request.token)
     if not user_data:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -131,7 +132,7 @@ def admin_login(
         )
     
     # Get user from database
-    db_user = get_user_by_email(db, email)
+    db_user = get_user_by_email(db, request.email)
     if not db_user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -142,7 +143,7 @@ def admin_login(
     if db_user.role != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="User is not an admin"
+            detail="Access denied. Admin privileges required."
         )
     
     return {
@@ -153,14 +154,13 @@ def admin_login(
             "email": db_user.email,
             "role": db_user.role
         },
-        "redirect": "/admin/dashboard",
-        "token": token
+        "redirect": "/admin/dashboard"
     }
 
 
 @router.get("/dashboard")
 def admin_dashboard(
-    authorization: str,
+    authorization: Annotated[str | None, Header()] = None,
     db: Session = Depends(get_db)
 ):
     """
@@ -176,6 +176,12 @@ def admin_dashboard(
     Raises:
         HTTPException: If token invalid or user not admin
     """
+    
+    if not authorization:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authorization header is missing"
+        )
     
     # Extract and verify token
     token = extract_token_from_header(authorization)
@@ -197,13 +203,16 @@ def admin_dashboard(
     if not db_user or db_user.role != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="User is not an admin"
+            detail="Access denied. Admin privileges required."
         )
     
+    # Import FoundItemDB here to avoid circular imports
+    from app.models.item_model import FoundItemDB
+    
     # Get statistics
-    pending_items = db.query(get_found_items).filter_by(status="pending").count()
-    total_items = db.query(get_found_items).count()
-    approved_items = db.query(get_found_items).filter_by(status="approved").count()
+    pending_items = db.query(func.count(FoundItemDB.id)).filter(FoundItemDB.status == "pending").scalar()
+    total_items = db.query(func.count(FoundItemDB.id)).scalar()
+    approved_items = db.query(func.count(FoundItemDB.id)).filter(FoundItemDB.status == "approved").scalar()
     
     return {
         "status": "success",
@@ -213,19 +222,19 @@ def admin_dashboard(
             "email": db_user.email
         },
         "statistics": {
-            "pending_items": pending_items,
-            "total_items": total_items,
-            "approved_items": approved_items
+            "pending_items": pending_items or 0,
+            "total_items": total_items or 0,
+            "approved_items": approved_items or 0
         }
     }
 
 
 @router.get("/items/pending")
 def get_pending_items(
-    authorization: str,
+    authorization: Annotated[str | None, Header()] = None,
     db: Session = Depends(get_db),
     skip: int = Query(0, ge=0),
-    limit: int = Query(10, ge=1, le=50)
+    limit: int = Query(20, ge=1, le=50)
 ):
     """
     Get pending items for admin review
@@ -244,6 +253,12 @@ def get_pending_items(
         HTTPException: If token invalid or user not admin
     """
     
+    if not authorization:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authorization header is missing"
+        )
+    
     # Extract and verify token
     token = extract_token_from_header(authorization)
     if not token:
@@ -264,7 +279,7 @@ def get_pending_items(
     if not db_user or db_user.role != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="User is not an admin"
+            detail="Access denied. Admin privileges required."
         )
     
     # Get pending items
@@ -275,14 +290,25 @@ def get_pending_items(
     
     return {
         "status": "success",
-        "items": pending_items
+        "items": [
+            {
+                "id": item.id,
+                "description": item.description,
+                "location": item.location,
+                "date_found": item.date_found.isoformat() if item.date_found else None,
+                "image_url": item.image_url,
+                "status": item.status,
+                "created_at": item.created_at.isoformat() if item.created_at else None
+            }
+            for item in pending_items
+        ]
     }
 
 
 @router.post("/items/{item_id}/approve")
 def approve_item(
     item_id: int,
-    authorization: str,
+    authorization: Annotated[str | None, Header()] = None,
     db: Session = Depends(get_db)
 ):
     """
@@ -295,11 +321,17 @@ def approve_item(
         authorization: "Bearer <token>"
     
     Returns:
-        Updated item object
+        Success message
         
     Raises:
         HTTPException: If item not found, token invalid, or user not admin
     """
+    
+    if not authorization:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authorization header is missing"
+        )
     
     # Extract and verify token
     token = extract_token_from_header(authorization)
@@ -321,11 +353,12 @@ def approve_item(
     if not db_user or db_user.role != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="User is not an admin"
+            detail="Access denied. Admin privileges required."
         )
     
     # Get item
-    db_item = get_found_item_by_id(db, item_id)
+    from app.models.item_model import FoundItemDB
+    db_item = db.query(FoundItemDB).filter(FoundItemDB.id == item_id).first()
     if not db_item:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -339,32 +372,39 @@ def approve_item(
     
     return {
         "status": "success",
-        "message": "Item approved successfully",
-        "item": db_item
+        "message": "Item approved successfully"
     }
 
 
-@router.post("/items/{item_id}/reject")
-def reject_item(
-    item_id: int,
-    authorization: str,
-    db: Session = Depends(get_db)
+@router.get("/items/approved")
+def get_approved_items(
+    authorization: Annotated[str | None, Header()] = None,
+    db: Session = Depends(get_db),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100)
 ):
     """
-    Reject a found item
-    
-    Path Parameters:
-        item_id: ID of item to reject
+    Get all approved items
     
     Headers:
         authorization: "Bearer <token>"
     
+    Query Parameters:
+        skip: Number of items to skip (pagination)
+        limit: Number of items to return
+    
     Returns:
-        Updated item object
+        List of approved items
         
     Raises:
-        HTTPException: If item not found, token invalid, or user not admin
+        HTTPException: If token invalid or user not admin
     """
+    
+    if not authorization:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authorization header is missing"
+        )
     
     # Extract and verify token
     token = extract_token_from_header(authorization)
@@ -386,22 +426,171 @@ def reject_item(
     if not db_user or db_user.role != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="User is not an admin"
+            detail="Access denied. Admin privileges required."
+        )
+    
+    # Get approved items
+    from app.models.item_model import FoundItemDB
+    approved_items = db.query(FoundItemDB).filter(
+        FoundItemDB.status == "approved"
+    ).offset(skip).limit(limit).all()
+    
+    return {
+        "status": "success",
+        "items": [
+            {
+                "id": item.id,
+                "description": item.description,
+                "location": item.location,
+                "date_found": item.date_found.isoformat() if item.date_found else None,
+                "image_url": item.image_url,
+                "status": item.status,
+                "created_at": item.created_at.isoformat() if item.created_at else None
+            }
+            for item in approved_items
+        ]
+    }
+
+
+@router.get("/items/all")
+def get_all_items(
+    authorization: Annotated[str | None, Header()] = None,
+    db: Session = Depends(get_db),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100)
+):
+    """
+    Get all items (pending, approved, rejected)
+    
+    Headers:
+        authorization: "Bearer <token>"
+    
+    Query Parameters:
+        skip: Number of items to skip (pagination)
+        limit: Number of items to return
+    
+    Returns:
+        List of all items
+        
+    Raises:
+        HTTPException: If token invalid or user not admin
+    """
+    
+    if not authorization:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authorization header is missing"
+        )
+    
+    # Extract and verify token
+    token = extract_token_from_header(authorization)
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authorization header format"
+        )
+    
+    user_data = get_user_from_token(token)
+    if not user_data:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token"
+        )
+    
+    # Get user and verify admin
+    db_user = get_user_by_email(db, user_data.get("email"))
+    if not db_user or db_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. Admin privileges required."
+        )
+    
+    # Get all items
+    from app.models.item_model import FoundItemDB
+    all_items = db.query(FoundItemDB).offset(skip).limit(limit).all()
+    
+    return {
+        "status": "success",
+        "items": [
+            {
+                "id": item.id,
+                "description": item.description,
+                "location": item.location,
+                "date_found": item.date_found.isoformat() if item.date_found else None,
+                "image_url": item.image_url,
+                "status": item.status,
+                "created_at": item.created_at.isoformat() if item.created_at else None
+            }
+            for item in all_items
+        ]
+    }
+
+
+@router.post("/items/{item_id}/reject")
+def reject_item(
+    item_id: int,
+    authorization: Annotated[str | None, Header()] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Reject a found item
+    
+    Path Parameters:
+        item_id: ID of item to reject
+    
+    Headers:
+        authorization: "Bearer <token>"
+    
+    Returns:
+        Success message
+        
+    Raises:
+        HTTPException: If item not found, token invalid, or user not admin
+    """
+    
+    if not authorization:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authorization header is missing"
+        )
+    
+    # Extract and verify token
+    token = extract_token_from_header(authorization)
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authorization header format"
+        )
+    
+    user_data = get_user_from_token(token)
+    if not user_data:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token"
+        )
+    
+    # Get user and verify admin
+    db_user = get_user_by_email(db, user_data.get("email"))
+    if not db_user or db_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. Admin privileges required."
         )
     
     # Get item
-    db_item = get_found_item_by_id(db, item_id)
+    from app.models.item_model import FoundItemDB
+    db_item = db.query(FoundItemDB).filter(FoundItemDB.id == item_id).first()
     if not db_item:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Item not found"
         )
     
-    # Delete item
-    db.delete(db_item)
+    # Update status to rejected (or delete if you prefer)
+    db_item.status = "rejected"
     db.commit()
     
     return {
         "status": "success",
-        "message": "Item rejected and deleted"
+        "message": "Item rejected successfully"
     }

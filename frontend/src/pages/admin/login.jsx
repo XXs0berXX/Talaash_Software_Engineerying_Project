@@ -87,7 +87,6 @@ export default function AdminLogin() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <Navbar />
 
       <div className="container-custom py-12 flex justify-center">
         <div className="w-full max-w-md">

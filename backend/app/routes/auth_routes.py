@@ -3,7 +3,6 @@ Authentication routes for user signup and login
 Handles Firebase authentication integration
 """
 from pydantic import BaseModel
-# 💡 ADD Header and Annotated imports
 from fastapi import APIRouter, HTTPException, status, Depends, Header
 from typing import Annotated
 from sqlalchemy.orm import Session
@@ -15,6 +14,7 @@ from app.models.user_model import (
     get_user_by_email,
     user_exists
 )
+from app.utils.validators import validate_iba_email
 from app.utils.firebase_verify import (
     extract_token_from_header,
     get_user_from_token,
@@ -27,22 +27,6 @@ router = APIRouter()
 initialize_firebase()
 
 
-# 💡 FIXED: Accept both @iba.edu.pk and @khi.iba.edu.pk
-def validate_iba_email(email: str) -> bool:
-    """
-    Validate that email belongs to IBA domain
-    Accepts both @iba.edu.pk and @khi.iba.edu.pk
-    
-    Args:
-        email: Email address to validate
-        
-    Returns:
-        True if email ends with @iba.edu.pk or @khi.iba.edu.pk
-    """
-    return email.endswith('@iba.edu.pk') or email.endswith('@khi.iba.edu.pk')
-
-
-# 💡 FIX: Inherit from BaseModel to define the expected JSON body structure
 class LoginRequest(BaseModel): 
     """Pydantic Model for login request body"""
     email: str
@@ -57,7 +41,7 @@ def signup(
     """
     User signup endpoint
     
-    - Validates that email ends with @iba.edu.pk or @khi.iba.edu.pk
+    - Validates that email ends with @khi.iba.edu.pk
     - Creates user record in database
     - Frontend handles Firebase Authentication
     
@@ -76,7 +60,7 @@ def signup(
     if not validate_iba_email(request.email):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only @iba.edu.pk or @khi.iba.edu.pk email addresses are allowed"
+            detail="Only @khi.iba.edu.pk email addresses are allowed"
         )
     
     # Check if user already exists
@@ -119,7 +103,7 @@ def login(
     Raises:
         HTTPException: If token is invalid or user not found
     """
-    # 💡 Access email and token from the request object
+    # Access email and token from the request object
     email = request.email
     token = request.token
     
@@ -160,7 +144,6 @@ def login(
 
 @router.get("/verify-token")
 def verify_token(
-    
     authorization: Annotated[str | None, Header()] = None,
     db: Session = Depends(get_db)
 ):
@@ -179,8 +162,6 @@ def verify_token(
     
     # Check if header is present
     if not authorization:
-         # Now we raise 401 Unauthorized, which is the correct HTTP status 
-         # when the Authorization header is missing, instead of a 422 Pydantic error.
          raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authorization header is missing"

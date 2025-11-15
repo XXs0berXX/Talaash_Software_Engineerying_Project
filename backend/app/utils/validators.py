@@ -9,18 +9,20 @@ from typing import Optional
 
 def validate_iba_email(email: str) -> bool:
     """
-    Validate that email is from IBA domain (@iba.edu.pk)
+    Validate that email is from IBA Karachi domain (@khi.iba.edu.pk ONLY)
     
     Args:
         email: Email address to validate
         
     Returns:
-        bool: True if valid IBA email, False otherwise
+        bool: True if valid IBA Karachi email, False otherwise
     """
     if not email:
         return False
     
-    email_pattern = r'^[a-zA-Z0-9._%+-]+@iba\.edu\.pk$'
+    # ONLY accept @khi.iba.edu.pk
+    email_pattern = r'^[a-zA-Z0-9._%+-]+@khi\.iba\.edu\.pk$'
+    
     return re.match(email_pattern, email) is not None
 
 
