@@ -1,6 +1,6 @@
 /**
  * Admin Dashboard Page
- * Admin control panel for managing found items with tabs
+ * Admin control panel for managing found items with tabs including rejected items
  */
 
 import React, { useState, useEffect } from 'react';
@@ -17,7 +17,7 @@ function AdminDashboardContent() {
   const [stats, setStats] = useState(null);
   const [token, setToken] = useState('');
   const [error, setError] = useState('');
-  const [activeTab, setActiveTab] = useState('pending'); // 'pending', 'approved', 'all'
+  const [activeTab, setActiveTab] = useState('pending'); // 'pending', 'approved', 'rejected', 'all'
   const router = useRouter();
 
   useEffect(() => {
@@ -75,6 +75,8 @@ function AdminDashboardContent() {
         endpoint = '/api/admin/items/pending';
       } else if (status === 'approved') {
         endpoint = '/api/admin/items/approved';
+      } else if (status === 'rejected') {
+        endpoint = '/api/admin/items/rejected';
       } else {
         endpoint = '/api/admin/items/all';
       }
@@ -172,9 +174,9 @@ function AdminDashboardContent() {
 
         {/* Statistics Section */}
         {stats && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-12">
             <div className="bg-white rounded-lg shadow p-6 text-center">
-              <h3 className="text-3xl font-bold text-blue-600">
+              <h3 className="text-3xl font-bold text-yellow-600">
                 {stats.pending_items}
               </h3>
               <p className="text-gray-600 mt-2">Pending Items</p>
@@ -184,6 +186,12 @@ function AdminDashboardContent() {
                 {stats.approved_items}
               </h3>
               <p className="text-gray-600 mt-2">Approved Items</p>
+            </div>
+            <div className="bg-white rounded-lg shadow p-6 text-center">
+              <h3 className="text-3xl font-bold text-red-600">
+                {stats.rejected_items || 0}
+              </h3>
+              <p className="text-gray-600 mt-2">Rejected Items</p>
             </div>
             <div className="bg-white rounded-lg shadow p-6 text-center">
               <h3 className="text-3xl font-bold text-blue-600">
@@ -203,7 +211,7 @@ function AdminDashboardContent() {
                 onClick={() => setActiveTab('pending')}
                 className={`py-4 px-2 border-b-2 font-semibold text-sm transition-colors ${
                   activeTab === 'pending'
-                    ? 'border-blue-600 text-blue-600'
+                    ? 'border-yellow-600 text-yellow-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700'
                 }`}
               >
@@ -218,6 +226,16 @@ function AdminDashboardContent() {
                 }`}
               >
                 Approved ({stats?.approved_items || 0})
+              </button>
+              <button
+                onClick={() => setActiveTab('rejected')}
+                className={`py-4 px-2 border-b-2 font-semibold text-sm transition-colors ${
+                  activeTab === 'rejected'
+                    ? 'border-red-600 text-red-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                Rejected ({stats?.rejected_items || 0})
               </button>
               <button
                 onClick={() => setActiveTab('all')}
@@ -247,6 +265,7 @@ function AdminDashboardContent() {
                 <p className="text-gray-600">
                   {activeTab === 'pending' && 'No pending items'}
                   {activeTab === 'approved' && 'No approved items'}
+                  {activeTab === 'rejected' && 'No rejected items'}
                   {activeTab === 'all' && 'No items found'}
                 </p>
               </div>
@@ -283,6 +302,11 @@ function AdminDashboardContent() {
                       {item.category && (
                         <p className="text-sm text-gray-600 mt-1">
                           🏷️ {item.category}
+                        </p>
+                      )}
+                      {item.reporter_email && (
+                        <p className="text-sm text-gray-600 mt-1">
+                          👤 {item.reporter_email}
                         </p>
                       )}
                     </div>

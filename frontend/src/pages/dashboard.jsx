@@ -1,6 +1,6 @@
 /**
  * Dashboard Page - For Authenticated Users
- * Full-featured dashboard with all options
+ * Full-featured dashboard showing only approved items
  */
 
 import React, { useState, useEffect } from 'react';
@@ -27,7 +27,7 @@ function DashboardContent() {
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/found`,
         {
           params: {
-            status_filter: 'all', // Changed to 'all' to show pending items too
+            status_filter: 'approved', // Only show approved items
             limit: 12,
           },
         }
@@ -138,7 +138,7 @@ function DashboardContent() {
           </div>
         ) : items.length === 0 ? (
           <div className="bg-gray-100 p-8 rounded-lg text-center">
-            <p className="text-gray-600 mb-4">No items found yet</p>
+            <p className="text-gray-600 mb-4">No approved items to display yet</p>
             <Link href="/report-found">
               <button className="btn-primary">
                 Be the first to report an item
@@ -157,6 +157,23 @@ function DashboardContent() {
             ))}
           </div>
         )}
+      </div>
+
+      {/* Info Banner */}
+      <div className="bg-blue-50 border-t border-blue-100 py-8">
+        <div className="container-custom">
+          <div className="flex items-center justify-center text-center">
+            <div className="max-w-2xl">
+              <h3 className="text-lg font-bold text-blue-900 mb-2">
+                📢 All items are reviewed before appearing here
+              </h3>
+              <p className="text-sm text-blue-700">
+                Our admin team reviews all submissions to ensure quality and accuracy. 
+                Your reported items will appear here once approved.
+              </p>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Tips Section */}
